@@ -1,17 +1,19 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
-import { Camera, Shield, History, Settings, Eye, Scan, StopCircle, PlayCircle, Info, Zap } from 'lucide-react'
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react'
+import { Camera, Shield, History, Eye, Scan, StopCircle, PlayCircle, Info, Zap } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card'
 import { Button } from './components/ui/button'
 import { Badge } from './components/ui/badge'
 import CameraComponent from './components/Camera'
 import AnalysisResults from './components/AnalysisResults'
-import ScanHistory from './components/ScanHistory'
-import AdminPanel from './components/AdminPanel'
 import ThemeSwitcher from './components/ThemeSwitcher'
 import LanguageSwitcher from './components/LanguageSwitcher'
 import Notifications from './components/Notifications'
+
+// Lazy-loaded components for better performance
+const ScanHistory = lazy(() => import('./components/ScanHistory'))
+const AdminPanel = lazy(() => import('./components/AdminPanel'))
 
 // Mock types for the application
 interface AnalysisResult {
@@ -286,28 +288,19 @@ export default function CyberLensApp() {
         
         {/* History Section */}
         {showHistory && (
-          <Card className="mt-8 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl border-white/20 dark:border-slate-700/50 shadow-xl hover:shadow-2xl transition-all duration-500 animate-in slide-in-from-bottom-4">
-            <CardHeader>
-              <CardTitle className="flex items-center text-xl font-semibold text-slate-800 dark:text-slate-200">
-                <div className="relative mr-3">
-                  <div className="absolute inset-0 bg-amber-500 rounded-lg blur opacity-50"></div>
-                  <div className="relative bg-gradient-to-r from-amber-500 to-orange-500 p-2 rounded-lg">
-                    <History className="h-5 w-5 text-white" />
-                  </div>
-                </div>
-                Scan History
-                <Badge variant="outline" className="ml-auto">
-                  {scanHistory.length} scans
-                </Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <ScanHistory 
-                history={scanHistory} 
-                onHistoryUpdated={loadScanHistory} 
-              />
-            </CardContent>
-          </Card>
+          <Suspense fallback={
+            <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+              <div className="animate-pulse flex flex-col items-center">
+                <div className="w-12 h-12 rounded-full bg-blue-500/20 mb-3"></div>
+                <div className="text-sm text-slate-300">Memuat riwayat...</div>
+              </div>
+            </div>
+          }>
+            <ScanHistory 
+              history={scanHistory} 
+              onClose={() => setShowHistory(false)} 
+            />
+          </Suspense>
         )}
       </main>
       
@@ -339,7 +332,18 @@ export default function CyberLensApp() {
       
       {/* Admin Panel */}
       {showAdminPanel && (
-        <AdminPanel onClose={() => setShowAdminPanel(false)} />
+        <Suspense fallback={
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+            <div className="animate-pulse flex flex-col items-center">
+              <div className="w-14 h-14 rounded-full bg-indigo-500/20 mb-3"></div>
+              <div className="text-sm text-slate-300">Memuat panel admin...</div>
+            </div>
+          </div>
+        }>
+          <AdminPanel
+            onClose={() => setShowAdminPanel(false)}
+          />
+        </Suspense>
       )}
 
       {/* Notifications */}

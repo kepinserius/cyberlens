@@ -15,7 +15,15 @@ const analyzeTextForThreats = (text: string): AnalysisResult => {
     'urgent', 'segera', 'limited time', 'waktu terbatas', 'free', 'gratis',
     'winner', 'pemenang', 'won', 'menang', 'click here', 'klik disini',
     'congratulation', 'selamat', 'hadiah', 'prize', 'jackpot', 'lucky',
-    'beruntung', 'exclusive', 'eksklusif', 'limited offer', 'penawaran terbatas'
+    'beruntung', 'exclusive', 'eksklusif', 'limited offer', 'penawaran terbatas',
+    // Tambahan kata kunci khusus bahasa Indonesia
+    'jangan dibagikan', 'rahasia', 'otp', 'kode otp', 'kode verifikasi',
+    'kode rahasia', 'pin atm', 'nomor rekening', 'transfer segera', 'darurat',
+    'butuh bantuan', 'tolong kirim', 'promo terbatas', 'diskon besar',
+    'kesempatan terakhir', 'hanya hari ini', 'batas waktu', 'jumlah terbatas',
+    'buruan', 'cepat', 'daftarkan', 'unduh sekarang', 'konfirmasi data',
+    'informasi rahasia', 'informasi pribadi', 'login segera', 'reset password',
+    'peringatan keamanan', 'masalah akun', 'verifikasi akun', 'validasi data'
   ];
   
   // Kata kunci yang mungkin mengindikasikan malware
@@ -23,7 +31,15 @@ const analyzeTextForThreats = (text: string): AnalysisResult => {
     'download', 'unduh', 'install', 'pasang', 'exe', 'setup', 'update',
     'pembaruan', 'activate', 'aktivasi', 'crack', 'keygen', 'serial', 'patch',
     'virus', 'malware', 'trojan', 'worm', 'ransomware', 'hack', 'hacker',
-    'vulnerability', 'kerentanan', 'exploit', 'spyware', 'adware'
+    'vulnerability', 'kerentanan', 'exploit', 'spyware', 'adware',
+    // Tambahan kata kunci malware untuk bahasa Indonesia
+    'akses penuh', 'akses root', 'aplikasi terlarang', 'bypass', 'buka kunci',
+    'sistem palsu', 'pembaruan palsu', 'aplikasi palsu', 'perangkat lunak bajakan',
+    'perbaiki virus', 'hapus virus', 'keamanan terdeteksi', 'peringatan sistem',
+    'sistem terinfeksi', 'komputer terinfeksi', 'perangkat terinfeksi',
+    'izinkan akses', 'izinkan notifikasi', 'izinkan pemberitahuan',
+    'versi terbaru', 'versi pro', 'versi premium', 'versi penuh',
+    'akses terbatas', 'aplikasi berbahaya', 'tidak terdeteksi antivirus'
   ];
   
   // Kata kunci untuk transaksi keuangan
@@ -31,7 +47,16 @@ const analyzeTextForThreats = (text: string): AnalysisResult => {
     'transfer', 'payment', 'pembayaran', 'wallet', 'dompet', 'bitcoin', 'crypto',
     'kripto', 'atm', 'bank', 'dana', 'gopay', 'ovo', 'pulsa', 'bca', 'bni', 'bri', 'mandiri',
     'kartu debit', 'debit card', 'credit card', 'kartu kredit', 'cvv', 'pin', 'expiry',
-    'kadaluarsa', 'balance', 'saldo', 'withdraw', 'tarik', 'deposit', 'setor'
+    'kadaluarsa', 'balance', 'saldo', 'withdraw', 'tarik', 'deposit', 'setor',
+    // Tambahan kata kunci keuangan untuk Indonesia
+    'e-banking', 'm-banking', 'internet banking', 'mobile banking', 'rekening',
+    'virtual account', 'va', 'kode pembayaran', 'batas transfer', 'limit harian',
+    'dompet digital', 'e-wallet', 'shopeepay', 'linkaja', 'jenius', 'octo', 'cimb',
+    'permata', 'panin', 'btpn', 'jago', 'blu', 'flip', 'bibit', 'bareksa', 'akulaku',
+    'kredivo', 'home credit', 'pinjol', 'pinjaman online', 'cicilan', 'tenor',
+    'bunga', 'bunga 0%', 'cashback', 'kode promo', 'kode voucher', 'point reward',
+    'tabungan', 'deposito', 'giro', 'bunga harian', 'cek saldo', 'mutasi rekening',
+    'bukti transfer', 'kode unik', 'nomor referensi'
   ];
   
   // Menghitung jumlah kata kunci yang terdeteksi
@@ -201,12 +226,12 @@ const extractTextFromImage = async (imageData: string): Promise<string> => {
     // Konfigurasi khusus untuk Tesseract
     await worker.setParameters({
       tessedit_pageseg_mode: PSM.AUTO,
-      tessedit_char_whitelist: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,;:!?@#$%^&*()-_+=[]{}|\\/<>\'"`~ ',
+      tessedit_char_whitelist: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,;:!?@#$%^&*()-_+=[]{}|\\/<>\'"`~ áàäâãåéèëêíìïîóòöôõúùüûçñÁÀÄÂÃÅÉÈËÊÍÌÏÎÓÒÖÔÕÚÙÜÛÇÑ',
       tessjs_create_hocr: '0',
       tessjs_create_tsv: '0',
       tessjs_create_box: '0',
       tessjs_create_unlv: '0',
-      tessjs_create_osd: '0',
+      tessjs_create_osd: '0'
     });
     
     console.log('Worker OCR siap, mulai mengenali teks...');

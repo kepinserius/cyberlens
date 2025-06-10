@@ -51,8 +51,14 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState("system")
   const [deepseekApiKey, setDeepseekApiKey] = useState("")
   const [openaiApiKey, setOpenaiApiKey] = useState("")
-  const [selectedAIService, setSelectedAIService] = useState(mockConfig.defaultAIService)
-  const [ocrSettings, setOcrSettings] = useState(mockConfig.ocr)
+  const [selectedAIService, setSelectedAIService] = useState("deepseek")
+  const [ocrSettings, setOcrSettings] = useState({ 
+    enabled: true, 
+    useAsBackup: true,
+    enhancedProcessing: true,
+    languages: "ind+eng",
+    minConfidence: 0.3
+  })
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({
     checking: false,
     available: false,
@@ -60,6 +66,9 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
     latestVersion: "",
     error: null,
   })
+  const [isSaving, setIsSaving] = useState(false)
+  const [errorMessage, setErrorMessage] = useState("")
+  const [successMessage, setSuccessMessage] = useState("")
 
   // Mock notification function
   const addNotification = (message: string, type: "success" | "error" | "info") => {
@@ -119,21 +128,101 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
     }
   }
 
-  // Save API settings
-  const saveSettings = () => {
-    try {
-      // Save to localStorage
-      localStorage.setItem("deepseek_api_key", deepseekApiKey)
-      localStorage.setItem("openai_api_key", openaiApiKey)
-      localStorage.setItem("selected_ai_service", selectedAIService)
-      localStorage.setItem("ocr_settings", JSON.stringify(ocrSettings))
-
-      addNotification("Settings saved successfully!", "success")
-    } catch (error) {
-      console.error("Error saving settings:", error)
-      addNotification("Failed to save settings", "error")
+  // Menambahkan fungsi validateApiKey untuk memeriksa kevalidan API key DeepSeek
+  const validateApiKey = async (apiKey: string): Promise<boolean> => {
+    if (!apiKey || apiKey.trim() === '' || apiKey === 'sk-aa7f7d4aa02946aca25ab8dd7c30ff75') {
+      return false;
     }
-  }
+    
+    try {
+      const endpoint = 'https://api.deepseek.com/v1/chat/completions';
+      
+      // Kirim permintaan sederhana untuk validasi
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: "deepseek-chat",
+          messages: [
+            {
+              role: "user",
+              content: "API key validation test"
+            }
+          ],
+          max_tokens: 5
+        })
+      });
+      
+      if (response.status === 200 || response.status === 201) {
+        return true;
+      } else if (response.status === 401 || response.status === 403) {
+        console.error('API key tidak valid:', await response.text());
+        return false;
+      } else {
+        // API mungkin valid, tetapi ada masalah lain
+        console.warn('Respons API tidak jelas:', response.status);
+        return true;
+      }
+    } catch (error) {
+      console.error('Error validasi API key:', error);
+      return false;
+    }
+  };
+
+  // Pada fungsi saveSettings, tambahkan validasi API key
+  const saveSettings = async () => {
+    setIsSaving(true);
+    
+    try {
+      // Validasi API key DeepSeek jika diubah
+      if (deepseekApiKey !== mockConfig.apiKeys.deepseek) {
+        const isValid = await validateApiKey(deepseekApiKey);
+        
+        if (!isValid) {
+          setErrorMessage('API key DeepSeek tidak valid. Pastikan Anda memasukkan API key yang benar.');
+          setIsSaving(false);
+          return;
+        }
+      }
+      
+      // Jika valid, simpan ke localStorage (gunakan storageService.saveSecureData jika sudah diimplementasikan)
+      const newSettings = {
+        ...mockConfig,
+        apiKeys: {
+          ...mockConfig.apiKeys,
+          deepseek: deepseekApiKey,
+        },
+        ocr: {
+          ...mockConfig.ocr,
+          enabled: ocrSettings.enabled,
+          useAsBackup: ocrSettings.useAsBackup,
+        },
+        lastValidated: new Date().toISOString()
+      };
+      
+      localStorage.setItem('cyberlensSettings', JSON.stringify(newSettings));
+      
+      // Update konfigurasi aplikasi
+      mockConfig.apiKeys.deepseek = deepseekApiKey;
+      mockConfig.ocr.enabled = ocrSettings.enabled;
+      mockConfig.ocr.useAsBackup = ocrSettings.useAsBackup;
+      
+      setSuccessMessage('Pengaturan berhasil disimpan!');
+      
+      // Auto-close message after 3 seconds
+      setTimeout(() => {
+        setSuccessMessage('');
+      }, 3000);
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      setErrorMessage('Terjadi kesalahan saat menyimpan pengaturan.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   // Load settings on component mount
   useEffect(() => {

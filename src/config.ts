@@ -37,10 +37,15 @@ export const config = {
   ocr: {
     enabled: true,
     useAsBackup: true,
-    languages: 'ind+eng',
+    languages: 'ind+eng', // Bahasa Indonesia dan Inggris
     enhancedProcessing: true,
-    minConfidence: 0.3,
-    createVariations: true
+    minConfidence: 0.25, // Turunkan sedikit untuk lebih toleran
+    createVariations: true,
+    adaptiveThreshold: true, // Menggunakan threshold adaptif
+    tesseractOptions: {
+      // Opsi tambahan untuk tesseract jika didukung versi terbaru
+      mode: 'auto', // PSM.AUTO
+    }
   },
   
   // Application settings

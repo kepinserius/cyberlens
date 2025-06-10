@@ -170,7 +170,7 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
     return () => {
       stopCameraStream()
     }
-  }, [])
+  }, [startCamera])
 
   // Handle camera device change
   const handleCameraChange = async (deviceId: string) => {

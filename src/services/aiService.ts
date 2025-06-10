@@ -94,6 +94,36 @@ const getRandomRiskLevel = (): string => {
   return 'safe';
 };
 
+// Menambahkan sistem cache untuk hasil analisis
+const analysisCache = new Map<string, {result: AnalysisResult, timestamp: number}>();
+const CACHE_EXPIRY_TIME = 1000 * 60 * 30; // 30 menit
+
+// Fungsi untuk membuat hash sederhana dari gambar untuk digunakan sebagai kunci cache
+const generateImageHash = (imageData: string): string => {
+  // Ambil sampel dari gambar untuk membuat hash sederhana
+  // Ini lebih efisien daripada menggunakan seluruh imageData
+  const sampleSize = 100;
+  let hash = '';
+  
+  if (imageData.startsWith('data:image')) {
+    const base64Data = imageData.split(',')[1];
+    const length = base64Data.length;
+    // Ambil sampel dari awal, tengah, dan akhir gambar
+    const step = Math.floor(length / sampleSize);
+    for (let i = 0; i < sampleSize; i++) {
+      hash += base64Data[i * step % length];
+    }
+  } else {
+    const length = imageData.length;
+    const step = Math.floor(length / sampleSize);
+    for (let i = 0; i < sampleSize; i++) {
+      hash += imageData[i * step % length];
+    }
+  }
+  
+  return hash;
+};
+
 /**
  * Save a screenshot to the filesystem (only in Electron/Node environment)
  * In browser environment, this will just download the image
@@ -162,33 +192,54 @@ const analyzeImage = async (imageData: string): Promise<AnalysisResult> => {
       processedImageData = imageData.split(',')[1];
     }
     
+    // Generate image hash untuk caching
+    const imageHash = generateImageHash(imageData);
+    
+    // Cek apakah hasil sudah ada di cache dan masih valid
+    const cachedData = analysisCache.get(imageHash);
+    const now = Date.now();
+    
+    if (cachedData && (now - cachedData.timestamp < CACHE_EXPIRY_TIME)) {
+      console.log("Menggunakan hasil analisis dari cache");
+      return cachedData.result;
+    }
+    
     // Log mode yang digunakan
     console.log("Mode aplikasi:", config.application.useMockData ? "Mock Data" : "API DeepSeek");
+    
+    // Proses analisis seperti biasa
+    let result: AnalysisResult;
     
     // Selalu gunakan DeepSeek API jika konfigurasi tidak menggunakan mock data
     if (!config.application.useMockData) {
       try {
-        return await analyzeWithDeepSeek(processedImageData);
+        result = await analyzeWithDeepSeek(processedImageData);
       } catch (error) {
         console.error('Error dalam DeepSeek API:', error);
         
         // Hanya gunakan OCR sebagai fallback jika OCR diaktifkan dan dikonfigurasi sebagai backup
         if (config.ocr?.enabled !== false && config.ocr?.useAsBackup !== false) {
           console.log('Mencoba OCR sebagai alternatif...');
-          return await ocrService.analyzeImageWithOCR(processedImageData);
+          result = await ocrService.analyzeImageWithOCR(processedImageData);
         } else {
           console.log('OCR tidak diaktifkan sebagai fallback, melempar error asli');
           throw error; // Lempar kembali error karena OCR tidak diaktifkan
         }
       }
+    } else {
+      // Hanya gunakan mock data jika dikonfigurasi untuk menggunakan mock data
+      await new Promise(resolve => setTimeout(resolve, MOCK_ANALYSIS_DELAY));
+      const riskLevel = getRandomRiskLevel();
+      result = { ...mockResults[riskLevel], timestamp: new Date().toISOString() };
+      
+      console.log("Menggunakan mock data dengan risk level:", riskLevel);
     }
     
-    // Hanya gunakan mock data jika dikonfigurasi untuk menggunakan mock data
-    await new Promise(resolve => setTimeout(resolve, MOCK_ANALYSIS_DELAY));
-    const riskLevel = getRandomRiskLevel();
-    const result = { ...mockResults[riskLevel], timestamp: new Date().toISOString() };
-    
-    console.log("Menggunakan mock data dengan risk level:", riskLevel);
+    // Simpan hasil ke cache
+    analysisCache.set(imageHash, {
+      result,
+      timestamp: now
+    });
     
     return result;
   } catch (error) {

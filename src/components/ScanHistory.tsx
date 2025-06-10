@@ -36,10 +36,11 @@ interface ScanHistoryItem {
 
 interface ScanHistoryProps {
   history: ScanHistoryItem[]
-  onHistoryUpdated: () => void
+  onHistoryUpdated?: () => void
+  onClose?: () => void
 }
 
-export default function ScanHistory({ history, onHistoryUpdated }: ScanHistoryProps) {
+export default function ScanHistory({ history, onHistoryUpdated, onClose }: ScanHistoryProps) {
   const [selectedItem, setSelectedItem] = useState<ScanHistoryItem | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null)
 
@@ -97,13 +98,17 @@ export default function ScanHistory({ history, onHistoryUpdated }: ScanHistoryPr
     }
 
     setShowDeleteConfirm(null)
-    onHistoryUpdated()
+    if (onHistoryUpdated) {
+      onHistoryUpdated()
+    }
   }
 
   const handleClearAll = () => {
     localStorage.removeItem("scanHistory")
     setSelectedItem(null)
-    onHistoryUpdated()
+    if (onHistoryUpdated) {
+      onHistoryUpdated()
+    }
   }
 
   if (history.length === 0) {
