@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useEffect, useState } from "react"
+import { useRef, useEffect, useState, useCallback } from "react"
 import { Camera, CameraIcon as Capture, AlertCircle, RotateCcw, Loader2 } from "lucide-react"
 import { Button } from "./ui/button"
 import { Card } from "./ui/card"
@@ -49,6 +49,8 @@ const cameraService = {
 export default function CameraComponent({ onCapture, isScanning }: CameraProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const initAttemptRef = useRef<number>(0) // Track initialization attempts
+  const maxInitAttempts = 3 // Maximum number of initialization attempts
 
   const [cameraDevices, setCameraDevices] = useState<MediaDeviceInfo[]>([])
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>("")
@@ -61,8 +63,18 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
   // Request camera permission and get available cameras
   const requestCameraPermission = async () => {
     try {
-      // Request permission first
-      await navigator.mediaDevices.getUserMedia({ video: true })
+      // Request permission first with a timeout
+      const permissionPromise = navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: "environment" } 
+      })
+      
+      // Add timeout to handle hanging camera permission requests
+      const timeoutPromise = new Promise<MediaStream>((_, reject) => {
+        setTimeout(() => reject(new Error("Camera permission request timed out")), 10000)
+      })
+      
+      // Race between permission request and timeout
+      await Promise.race([permissionPromise, timeoutPromise])
 
       // Get available cameras after permission is granted
       const devices = await cameraService.getAvailableCameras()
@@ -79,7 +91,8 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
     } catch (err) {
       console.error("Camera permission error:", err)
       setHasPermission(false)
-      setError("Failed to initialize camera. Please check permissions.")
+      const errorMsg = err instanceof Error ? err.message : "Failed to initialize camera"
+      setError(`Camera error: ${errorMsg}. Please check connections and permissions.`)
       return []
     }
   }
@@ -87,14 +100,25 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
   // Stop camera stream
   const stopCameraStream = () => {
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop())
+      streamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop()
+        } catch (e) {
+          console.error("Error stopping track:", e)
+        }
+      })
       streamRef.current = null
     }
+    
+    if (videoRef.current) {
+      videoRef.current.srcObject = null
+    }
+    
     setIsCameraActive(false)
   }
 
   // Start camera with specific device
-  const startCamera = async (deviceId?: string) => {
+  const startCamera = useCallback(async (deviceId?: string) => {
     try {
       setError(null)
       setIsRetrying(true)
@@ -102,10 +126,11 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       // Stop any existing stream
       stopCameraStream()
 
-      // Camera options
+      // Camera options for Orange Pi compatibility
       const cameraOptions: MediaTrackConstraints = {
         width: { ideal: 1280 },
         height: { ideal: 720 },
+        frameRate: { ideal: 30, min: 10 }, // Add frameRate constraints
         facingMode: "environment",
       }
 
@@ -117,17 +142,39 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
 
       let stream: MediaStream
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
+        // Add timeout to prevent hanging camera initialization
+        const streamPromise = navigator.mediaDevices.getUserMedia({
           video: cameraOptions,
           audio: false,
         })
+        
+        const timeoutPromise = new Promise<MediaStream>((_, reject) => {
+          setTimeout(() => reject(new Error("Camera access timed out")), 10000)
+        })
+        
+        stream = await Promise.race([streamPromise, timeoutPromise])
       } catch (err) {
+        console.error("First camera attempt failed:", err)
+        
         // Fallback to front camera if back camera fails
         if (!deviceId) {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: "user" },
-            audio: false,
-          })
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { 
+                facingMode: "user",
+                width: { ideal: 640 }, // Reduce resolution for fallback
+                height: { ideal: 480 } 
+              },
+              audio: false,
+            })
+          } catch (frontErr) {
+            console.error("Front camera fallback failed:", frontErr)
+            // Try one more time with minimal constraints
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: true,
+              audio: false,
+            })
+          }
         } else {
           throw err
         }
@@ -139,21 +186,38 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       // Set video source
       if (videoRef.current) {
         videoRef.current.srcObject = stream
-        await videoRef.current.play()
-
-        // Update camera service
-        cameraService.videoElement = videoRef.current
-        cameraService.videoStream = stream
-
-        setIsCameraActive(true)
+        videoRef.current.onloadedmetadata = async () => {
+          try {
+            await videoRef.current!.play()
+            // Update camera service
+            cameraService.videoElement = videoRef.current
+            cameraService.videoStream = stream
+            setIsCameraActive(true)
+            // Reset init attempts on success
+            initAttemptRef.current = 0
+          } catch (playErr) {
+            console.error("Error playing video:", playErr)
+            setError("Failed to play video stream. Please try again.")
+          }
+        }
       }
     } catch (err) {
       console.error("Camera initialization error:", err)
-      setError("Failed to initialize camera. Please check permissions.")
+      const errorMsg = err instanceof Error ? err.message : "Unknown error"
+      setError(`Camera error: ${errorMsg}. Try reconnecting your camera.`)
+      
+      // Increment attempt counter and try again if under max attempts
+      initAttemptRef.current += 1
+      if (initAttemptRef.current < maxInitAttempts) {
+        setTimeout(() => {
+          console.log(`Retrying camera initialization (attempt ${initAttemptRef.current + 1}/${maxInitAttempts})`)
+          startCamera(deviceId)
+        }, 2000) // Wait 2 seconds before retry
+      }
     } finally {
       setIsRetrying(false)
     }
-  }
+  }, [])
 
   // Initialize camera on mount
   useEffect(() => {
@@ -227,19 +291,52 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
   useEffect(() => {
     if (!isScanning || !isCameraActive) return
 
+    let captureAttempts = 0
+    const maxCaptureAttempts = 3
+    const captureDelayMs = 3000 // 3 seconds between captures
+
     const captureInterval = setInterval(() => {
       try {
+        // Check if video element and stream are valid
+        if (!videoRef.current || !streamRef.current || 
+            !streamRef.current.active || 
+            !videoRef.current.videoWidth || 
+            !videoRef.current.videoHeight) {
+          
+          captureAttempts++;
+          console.warn(`Camera stream not ready for capture (attempt ${captureAttempts}/${maxCaptureAttempts})`)
+          
+          // If we've tried too many times, restart the camera
+          if (captureAttempts >= maxCaptureAttempts) {
+            console.error("Max capture attempts reached, restarting camera")
+            captureAttempts = 0
+            startCamera(selectedDeviceId || undefined)
+          }
+          return
+        }
+        
+        // Reset capture attempts counter on success
+        captureAttempts = 0
+        
+        // Attempt to capture the frame
         const imageData = cameraService.captureFrame()
         onCapture(imageData)
       } catch (err) {
         console.error("Auto-capture error:", err)
+        
+        captureAttempts++;
+        if (captureAttempts >= maxCaptureAttempts) {
+          console.error("Max capture error attempts reached, restarting camera")
+          captureAttempts = 0
+          startCamera(selectedDeviceId || undefined)
+        }
       }
-    }, 3000) // Capture every 3 seconds
+    }, captureDelayMs)
 
     return () => {
       clearInterval(captureInterval)
     }
-  }, [isScanning, isCameraActive, onCapture])
+  }, [isScanning, isCameraActive, onCapture, startCamera, selectedDeviceId])
 
   // Error state
   if (hasPermission === false) {
@@ -305,19 +402,19 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
         {/* Scanning Overlay */}
         {isScanning && isCameraActive && (
           <>
-            {/* Corner Brackets */}
-            <div className="absolute top-4 left-4 w-8 h-8 border-l-2 border-t-2 border-green-400 animate-pulse"></div>
-            <div className="absolute top-4 right-4 w-8 h-8 border-r-2 border-t-2 border-green-400 animate-pulse"></div>
-            <div className="absolute bottom-4 left-4 w-8 h-8 border-l-2 border-b-2 border-green-400 animate-pulse"></div>
-            <div className="absolute bottom-4 right-4 w-8 h-8 border-r-2 border-b-2 border-green-400 animate-pulse"></div>
+            {/* Corner Brackets - Reduced animation intensity */}
+            <div className="absolute top-4 left-4 w-8 h-8 border-l-2 border-t-2 border-green-400 opacity-80"></div>
+            <div className="absolute top-4 right-4 w-8 h-8 border-r-2 border-t-2 border-green-400 opacity-80"></div>
+            <div className="absolute bottom-4 left-4 w-8 h-8 border-l-2 border-b-2 border-green-400 opacity-80"></div>
+            <div className="absolute bottom-4 right-4 w-8 h-8 border-r-2 border-b-2 border-green-400 opacity-80"></div>
 
-            {/* Scanning Line */}
-            <div className="absolute inset-x-0 h-0.5 bg-gradient-to-r from-transparent via-green-400 to-transparent animate-scan"></div>
+            {/* Scanning Line - Optimized for Orange Pi */}
+            <div className="absolute inset-x-0 h-0.5 bg-gradient-to-r from-transparent via-green-400 to-transparent animate-scan transform translateZ(0)"></div>
 
-            {/* Status Indicator */}
+            {/* Status Indicator - Simplified for performance */}
             <div className="absolute top-4 left-1/2 transform -translate-x-1/2">
-              <div className="bg-green-500/90 backdrop-blur-sm text-white px-3 py-1 rounded-full text-sm font-medium flex items-center">
-                <div className="w-2 h-2 bg-white rounded-full mr-2 animate-pulse"></div>
+              <div className="bg-green-500/80 text-white px-3 py-1 rounded-full text-sm font-medium flex items-center">
+                <div className="w-2 h-2 bg-white rounded-full mr-2"></div>
                 AUTO SCANNING
               </div>
             </div>

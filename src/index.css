@@ -60,7 +60,10 @@
 
 @layer utilities {
   .animate-scan {
-    animation: scan 2s ease-in-out infinite;
+    animation: scan 2.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    will-change: top, opacity;
+    transform: translateZ(0);
+    backface-visibility: hidden;
   }
 
   @keyframes scan {
@@ -68,8 +71,11 @@
       top: 0;
       opacity: 0;
     }
-    50% {
-      opacity: 1;
+    20% {
+      opacity: 0.8;
+    }
+    80% {
+      opacity: 0.8;
     }
     100% {
       top: 100%;
