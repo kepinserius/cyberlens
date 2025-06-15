@@ -483,7 +483,19 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
     } finally {
       setIsRetrying(false);
     }
-  }, [stopCameraStream, startCamera]);
+  }, [stopCameraStream, startCamera, selectedDeviceId]);
+
+  // Use retryCamera in the error state section
+  useEffect(() => {
+    // If there's an error and camera is not active, try to recover automatically
+    if (error && !isCameraActive && !isRetrying) {
+      const timer = setTimeout(() => {
+        retryCamera();
+      }, 5000); // Auto-retry after 5 seconds
+      
+      return () => clearTimeout(timer);
+    }
+  }, [error, isCameraActive, isRetrying, retryCamera]);
 
   // Error state
   if (hasPermission === false) {
