@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef, useEffect, useState, useCallback } from "react"
-import { Camera, CameraIcon as Capture, AlertCircle, RotateCcw, Loader2, RefreshCw } from "lucide-react"
+import { Camera, CameraIcon as Capture, AlertCircle, RotateCcw, Loader2, RefreshCw, FlipHorizontal } from "lucide-react"
 import { Button } from "./ui/button"
 import { Card } from "./ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
@@ -26,9 +26,48 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
   const [isRetrying, setIsRetrying] = useState(false)
   const [hasPermission, setHasPermission] = useState<boolean | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [isMirrored, setIsMirrored] = useState(false)
+
+  // Toggle camera mirroring
+  const toggleMirror = useCallback(() => {
+    setIsMirrored(prev => {
+      const newValue = !prev;
+      // Save preference to localStorage
+      localStorage.setItem('camera_mirror_mode', newValue ? 'true' : 'false');
+      
+      // Update camera service mirror mode
+      cameraService.setMirrorMode(newValue);
+      
+      if (videoRef.current) {
+        if (newValue) {
+          // Apply mirror effect
+          videoRef.current.style.transform = 'scaleX(-1)';
+        } else {
+          // Remove mirror effect
+          videoRef.current.style.transform = 'scaleX(1)';
+        }
+      }
+      
+      return newValue;
+    });
+  }, []);
+
+  // Load mirror preference on mount
+  useEffect(() => {
+    const savedMirrorMode = localStorage.getItem('camera_mirror_mode');
+    if (savedMirrorMode === 'true') {
+      setIsMirrored(true);
+      // Apply mirror effect if video element exists
+      if (videoRef.current) {
+        videoRef.current.style.transform = 'scaleX(-1)';
+      }
+      // Update camera service mirror mode
+      cameraService.setMirrorMode(true);
+    }
+  }, []);
 
   // Request camera permission and get available cameras
-  const requestCameraPermission = async () => {
+  const requestCameraPermission = useCallback(async () => {
     try {
       setIsRetrying(true)
       console.log("Requesting camera permission...")
@@ -37,7 +76,7 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       const devices = await cameraService.getAvailableCamerasWithPriority()
       console.log(`Found ${devices.length} camera devices:`, devices.map(d => d.label))
       setCameraDevices(devices)
-
+      
       if (devices.length > 0) {
         // Select the first camera by default
         // Ensure we have a valid deviceId
@@ -63,7 +102,7 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
     } finally {
       setIsRetrying(false)
     }
-  }
+  }, [])
 
   // Stop camera stream
   const stopCameraStream = useCallback(() => {
@@ -98,7 +137,8 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
         width: 1280,
         height: 720,
         frameRate: 30,
-        facingMode: deviceId ? undefined : 'environment'
+        facingMode: deviceId ? undefined : 'environment',
+        mirrored: isMirrored // Pass mirror mode to camera service
       });
       
       // If a specific device was requested, switch to it
@@ -116,6 +156,13 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       if (videoRef.current && cameraService.videoElement) {
         // Replace the existing video element's srcObject
         videoRef.current.srcObject = cameraService.videoElement.srcObject;
+        
+        // Apply mirror effect if enabled
+        if (isMirrored) {
+          videoRef.current.style.transform = 'scaleX(-1)';
+        } else {
+          videoRef.current.style.transform = 'scaleX(1)';
+        }
         
         // Set up event handlers
         videoRef.current.onloadedmetadata = async () => {
@@ -164,7 +211,7 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
     } finally {
       setIsRetrying(false)
     }
-  }, [stopCameraStream])
+  }, [stopCameraStream, isMirrored])
 
   // Handle camera device change
   const handleCameraChange = useCallback(async (deviceId: string) => {
@@ -221,6 +268,13 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
         // Set new srcObject
         videoRef.current.srcObject = video.srcObject;
         
+        // Apply mirror effect if enabled
+        if (isMirrored) {
+          videoRef.current.style.transform = 'scaleX(-1)';
+        } else {
+          videoRef.current.style.transform = 'scaleX(1)';
+        }
+        
         try {
           await videoRef.current.play();
           console.log("Video playing after camera switch");
@@ -251,132 +305,77 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
     } finally {
       setIsRetrying(false);
     }
-  }, [stopCameraStream, startCamera]);
+  }, [stopCameraStream, startCamera, isMirrored]);
 
   // Refresh camera devices list (useful for detecting newly connected cameras)
   const refreshCameraDevices = useCallback(async () => {
     try {
-      setIsRefreshing(true)
-      setError(null)
-      console.log("Refreshing camera devices list...")
+      setIsRefreshing(true);
+      console.log("Refreshing camera devices list...");
       
-      // First stop any active camera
-      stopCameraStream();
+      // Use cameraService to refresh devices
+      const devices = await cameraService.refreshCameraDevices();
+      console.log(`Refreshed camera list: found ${devices.length} devices`);
+      setCameraDevices(devices);
       
-      // Wait a moment for resources to be released
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Check for external cameras
+      const externalCamera = devices.find(device => cameraService.isExternalCamera(device));
       
-      // Use the new refreshCameraDevices method with priority for external cameras
-      await cameraService.refreshCameraDevices()
-      const devices = await cameraService.getAvailableCamerasWithPriority()
-      console.log(`After refresh: Found ${devices.length} camera devices:`, devices.map(d => d.label))
-      setCameraDevices(devices)
-      
-      if (devices.length > 0) {
-        // Find external camera if available
-        const externalCamera = devices.find(device => cameraService.isExternalCamera(device));
+      if (externalCamera) {
+        console.log("External camera detected:", externalCamera.label);
         
-        // Check if we should switch to an external camera
-        if (externalCamera && !devices.find(d => d.deviceId === selectedDeviceId && cameraService.isExternalCamera(d))) {
-          console.log("External camera detected, switching to it automatically");
-          const validDeviceId = externalCamera.deviceId;
-          
-          // Use cameraService.switchCamera directly instead of handleCameraChange
-          try {
-            // Stop current camera first
-            stopCameraStream();
-            
-            // Force a small delay to ensure clean switch
-            await new Promise(resolve => setTimeout(resolve, 500));
-            
-            // Update selected device ID before switching
-            setSelectedDeviceId(validDeviceId);
-            
-            // Switch camera
-            console.log(`Directly switching to external camera: ${validDeviceId}`);
-            const video = await cameraService.switchCamera(validDeviceId);
-            
-            // Update video reference
-            if (videoRef.current) {
-              // Make sure old srcObject is cleared
-              if (videoRef.current.srcObject) {
-                const oldStream = videoRef.current.srcObject as MediaStream;
-                if (oldStream) {
-                  oldStream.getTracks().forEach(track => {
-                    track.enabled = false;
-                    track.stop();
-                  });
-                }
-                videoRef.current.srcObject = null;
-              }
-              
-              // Set new srcObject
-              videoRef.current.srcObject = video.srcObject;
-              await videoRef.current.play();
-            }
-            
-            // Update stream reference and status
-            streamRef.current = cameraService.videoStream;
-            setIsCameraActive(true);
-            console.log(`Successfully switched to external camera: ${validDeviceId}`);
-            
-            // Verify active tracks
-            if (cameraService.videoStream) {
-              const tracks = cameraService.videoStream.getVideoTracks();
-              tracks.forEach(track => {
-                console.log(`Active video track: ${track.label}, enabled: ${track.enabled}, state: ${track.readyState}`);
-              });
-            }
-          } catch (err) {
-            console.error("Error switching to external camera:", err);
-            await startCamera(); // Fallback to default camera
-          }
-          return;
+        // If we're not already using this external camera, switch to it
+        if (externalCamera.deviceId !== selectedDeviceId) {
+          console.log("Switching to external camera");
+          await handleCameraChange(externalCamera.deviceId);
         }
-        
-        // Keep current camera if it still exists in the list
-        const currentDeviceExists = devices.some(device => device.deviceId === selectedDeviceId)
-        if (!currentDeviceExists) {
-          // Switch to the first camera if current one is no longer available
-          const validDeviceId = devices[0].deviceId || "default"
-          setSelectedDeviceId(validDeviceId)
-          await startCamera(validDeviceId)
-        } else {
-          // Restart current camera to ensure clean state
-          await startCamera(selectedDeviceId);
-        }
-        setHasPermission(true)
-      } else {
-        setError("No camera devices found after refresh. Please connect a camera and try again.")
       }
+      
+      return devices;
     } catch (err) {
-      console.error("Camera refresh error:", err)
-      const errorMsg = err instanceof Error ? err.message : "Failed to refresh camera list"
-      setError(`Camera refresh error: ${errorMsg}`)
+      console.error("Error refreshing camera devices:", err);
+      const errorMsg = err instanceof Error ? err.message : "Unknown error";
+      setError(`Failed to refresh camera list: ${errorMsg}`);
+      return [];
     } finally {
-      setIsRefreshing(false)
+      setIsRefreshing(false);
     }
-  }, [selectedDeviceId, startCamera, stopCameraStream]);
+  }, [handleCameraChange, selectedDeviceId]);
 
-  // Initialize camera on mount and set up device change listener
+  // Initialize camera on component mount
   useEffect(() => {
-    const initCamera = async () => {
-      const devices = await requestCameraPermission()
-      if (devices.length > 0) {
-        // Find external camera if available
-        const externalCamera = devices.find(device => cameraService.isExternalCamera(device));
+    // Load mirror preference first
+    const savedMirrorMode = localStorage.getItem('camera_mirror_mode') === 'true';
+    setIsMirrored(savedMirrorMode);
+    cameraService.setMirrorMode(savedMirrorMode);
+    
+    // Function to initialize camera
+    const initializeCamera = async () => {
+      try {
+        console.log("Initializing camera...")
         
-        // Ensure we have a valid deviceId - prioritize external camera if available
-        const validDeviceId = externalCamera?.deviceId || devices[0].deviceId || "default";
+        // Get available camera devices
+        const devices = await requestCameraPermission()
         
-        setSelectedDeviceId(validDeviceId)
-        console.log(`Initial camera setup with device ID: ${validDeviceId}${externalCamera ? ' (external camera)' : ''}`);
-        await startCamera(validDeviceId)
+        // Automatically select external camera if available
+        const externalCamera = devices.find(device => cameraService.isExternalCamera(device))
+        if (externalCamera) {
+          console.log("External camera detected, using it by default:", externalCamera.label)
+          setSelectedDeviceId(externalCamera.deviceId)
+          await startCamera(externalCamera.deviceId)
+        } else if (devices.length > 0) {
+          console.log("No external camera found, using first available camera")
+          setSelectedDeviceId(devices[0].deviceId)
+          await startCamera(devices[0].deviceId)
+        }
+      } catch (err) {
+        console.error("Camera initialization error:", err)
       }
     }
-
-    initCamera()
-
+    
+    // Start initialization
+    initializeCamera()
+    
     // Set up device change listener to detect when cameras are connected/disconnected
     const handleDeviceChange = async () => {
       console.log("Device change detected - a camera may have been connected or disconnected");
@@ -385,13 +384,13 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
 
     // Add event listener for device changes
     navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
-
-    // Cleanup on unmount
+    
+    // Clean up on unmount
     return () => {
       stopCameraStream()
       navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
     }
-  }, [startCamera, stopCameraStream, refreshCameraDevices])
+  }, [startCamera, stopCameraStream, refreshCameraDevices, requestCameraPermission])
 
   // Handle retry
   const handleRetry = async () => {
@@ -405,38 +404,47 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
     }
   }
 
-  // Handle manual capture with countdown
-  const handleCaptureClick = () => {
-    if (!isCameraActive) return
-
-    try {
+  // Handle capture button click
+  const handleCaptureClick = useCallback(async () => {
+    if (!isCameraActive || !videoRef.current) return
+    
+    // Start countdown if not already scanning
+    if (!isScanning) {
       setCountdown(3)
-
-      const countdownInterval = setInterval(() => {
-        setCountdown((prev) => {
+      
+      // Countdown timer
+      const timer = setInterval(() => {
+        setCountdown(prev => {
           if (prev === null || prev <= 1) {
-            clearInterval(countdownInterval)
-
-            if (prev === 1) {
-              try {
-                const imageData = cameraService.captureFrame()
-                onCapture(imageData)
-              } catch (err) {
-                setError("Failed to capture image")
-                console.error("Image capture error:", err)
-              }
-            }
-
+            clearInterval(timer)
+            // Trigger capture after countdown
+            captureImage()
             return null
           }
           return prev - 1
         })
       }, 1000)
-    } catch (err) {
-      setError("Failed to capture image")
-      console.error("Image capture error:", err)
+    } else {
+      // If already scanning, capture immediately
+      captureImage()
     }
-  }
+  }, [isCameraActive, isScanning])
+
+  // Capture image from video stream
+  const captureImage = useCallback(() => {
+    if (!videoRef.current) return
+    
+    try {
+      // Use cameraService to capture frame with mirror mode
+      const imageData = cameraService.captureFrame(isMirrored);
+      
+      // Pass the image data to the parent component
+      onCapture(imageData);
+    } catch (err) {
+      console.error("Error capturing image:", err)
+      setError("Failed to capture image. Please try again.")
+    }
+  }, [onCapture, isMirrored])
 
   // Auto-capture when scanning
   useEffect(() => {
@@ -533,7 +541,7 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
             autoPlay 
             playsInline 
             muted 
-            className="w-full h-full object-cover" 
+            className={`w-full h-full object-cover ${isMirrored ? 'scale-x-[-1]' : ''}`}
             onLoadedMetadata={() => console.log("Video element onLoadedMetadata event fired")}
             onPlaying={() => console.log("Video element onPlaying event fired")}
             onError={(e) => console.error("Video element error event:", e)}
@@ -654,6 +662,17 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
               <RefreshCw className="h-4 w-4" />
             )}
           </Button>
+          
+          {/* Mirror Toggle Button */}
+          <Button
+            onClick={toggleMirror}
+            variant={isMirrored ? "default" : "outline"}
+            size="icon"
+            className="flex-shrink-0"
+            title={isMirrored ? "Disable mirror mode" : "Enable mirror mode"}
+          >
+            <FlipHorizontal className="h-4 w-4" />
+          </Button>
         </div>
 
         {/* Manual Capture Button */}
@@ -673,10 +692,12 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
           <p>
             <span className="font-medium text-green-600 dark:text-green-400">✓</span> {cameraDevices.length} cameras detected. 
             Use the dropdown to switch between them.
+            {isMirrored && " Mirror mode is enabled."}
           </p>
         ) : cameraDevices.length === 1 ? (
           <p>
             Only one camera detected. If you have an external camera, connect it and click the refresh button.
+            {isMirrored && " Mirror mode is enabled."}
           </p>
         ) : (
           <p>

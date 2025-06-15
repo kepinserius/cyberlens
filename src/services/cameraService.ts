@@ -3,6 +3,7 @@ export interface CameraOptions {
   height?: number;
   facingMode?: 'user' | 'environment';
   frameRate?: number;
+  mirrored?: boolean;
 }
 
 export const cameraService = {
@@ -10,6 +11,7 @@ export const cameraService = {
   videoElement: null as HTMLVideoElement | null,
   lastFrameTime: 0,
   minFrameInterval: 200, // Minimal interval antara frames (ms) untuk mencegah overhead
+  isMirrored: false, // Track mirror state
   
   /**
    * Check browser support and compatibility issues
@@ -493,8 +495,9 @@ export const cameraService = {
   
   /**
    * Capture a frame from the video stream as a base64 encoded JPEG
+   * @param mirrored Whether to mirror the captured image
    */
-  captureFrame(): string {
+  captureFrame(mirrored?: boolean): string {
     // Throttle frame capture untuk menghindari overhead pada perangkat dengan performa rendah
     const now = Date.now();
     if (now - this.lastFrameTime < this.minFrameInterval) {
@@ -523,6 +526,13 @@ export const cameraService = {
       // Set canvas dimensions to match video
       canvas.width = this.videoElement.videoWidth;
       canvas.height = this.videoElement.videoHeight;
+      
+      // Apply mirror effect if requested
+      const shouldMirror = mirrored !== undefined ? mirrored : this.isMirrored;
+      if (shouldMirror) {
+        context.translate(canvas.width, 0);
+        context.scale(-1, 1);
+      }
       
       // Draw the current video frame to the canvas
       context.drawImage(this.videoElement, 0, 0, canvas.width, canvas.height);
@@ -554,6 +564,26 @@ export const cameraService = {
       console.error('Frame capture error:', error);
       throw new Error('Failed to capture frame from camera');
     }
+  },
+  
+  /**
+   * Set mirror mode for the camera
+   * @param mirrored Whether to mirror the camera view
+   */
+  setMirrorMode(mirrored: boolean): void {
+    this.isMirrored = mirrored;
+    
+    // Apply mirror effect to video element if it exists
+    if (this.videoElement) {
+      this.videoElement.style.transform = mirrored ? 'scaleX(-1)' : 'scaleX(1)';
+    }
+  },
+  
+  /**
+   * Get current mirror mode state
+   */
+  getMirrorMode(): boolean {
+    return this.isMirrored;
   },
   
   /**
