@@ -227,12 +227,12 @@ const analyzeImage = async (imageData: string): Promise<AnalysisResult> => {
         }
       }
     } else {
-      // Hanya gunakan mock data jika dikonfigurasi untuk menggunakan mock data
-      await new Promise(resolve => setTimeout(resolve, MOCK_ANALYSIS_DELAY));
-      const riskLevel = getRandomRiskLevel();
+    // Hanya gunakan mock data jika dikonfigurasi untuk menggunakan mock data
+    await new Promise(resolve => setTimeout(resolve, MOCK_ANALYSIS_DELAY));
+    const riskLevel = getRandomRiskLevel();
       result = { ...mockResults[riskLevel], timestamp: new Date().toISOString() };
-      
-      console.log("Menggunakan mock data dengan risk level:", riskLevel);
+    
+    console.log("Menggunakan mock data dengan risk level:", riskLevel);
     }
     
     // Simpan hasil ke cache

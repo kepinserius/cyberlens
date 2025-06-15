@@ -45,7 +45,7 @@ export const preprocessImage = async (base64Image: string): Promise<string> => {
     const contrastLevel = histogramData.contrastLevel < 50 ? 0.3 : 0.2;
     image.contrast(contrastLevel);
     
-    // Normalize - menyebarkan nilai pixel di seluruh rentang
+      // Normalize - menyebarkan nilai pixel di seluruh rentang
     image.normalize();
     
     // Lakukan thresholding manual untuk teks
@@ -80,17 +80,17 @@ export const preprocessImage = async (base64Image: string): Promise<string> => {
     if (histogramData.contrastLevel < 40) {
       applyAdaptiveThreshold(image, 15, 5); // Block size 15, constant 5
     } else {
-      // Terapkan threshold
-      image.scan(0, 0, width, height, function(this: any, x: number, y: number, idx: number) {
-        const gray = this.bitmap.data[idx];
-        const newValue = gray > threshold ? 255 : 0;
-        
-        // Set R, G, B ke nilai baru
-        this.bitmap.data[idx] = newValue;     // R
-        this.bitmap.data[idx + 1] = newValue; // G
-        this.bitmap.data[idx + 2] = newValue; // B
-        // Alpha channel tetap 255
-      });
+    // Terapkan threshold
+    image.scan(0, 0, width, height, function(this: any, x: number, y: number, idx: number) {
+      const gray = this.bitmap.data[idx];
+      const newValue = gray > threshold ? 255 : 0;
+      
+      // Set R, G, B ke nilai baru
+      this.bitmap.data[idx] = newValue;     // R
+      this.bitmap.data[idx + 1] = newValue; // G
+      this.bitmap.data[idx + 2] = newValue; // B
+      // Alpha channel tetap 255
+    });
     }
     
     // Sharpening untuk meningkatkan ketajaman teks

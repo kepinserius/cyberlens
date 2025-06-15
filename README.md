@@ -223,3 +223,29 @@ Untuk dukungan teknis atau pertanyaan lebih lanjut, hubungi:
 ## Lisensi
 
 Copyright © 2025 Your Company. Hak cipta dilindungi undang-undang.
+
+## Camera Troubleshooting
+
+If you're experiencing issues with camera detection or display, especially on Orange Pi devices:
+
+1. Run the camera diagnostics script:
+   ```
+   sudo ./scripts/fix-camera.sh
+   ```
+
+2. This script will:
+   - Check for camera modules and load them if necessary
+   - Verify video device permissions
+   - Test camera functionality
+   - Create a test page for browser compatibility
+
+3. Common camera issues on Orange Pi:
+   - Missing kernel modules - the script will attempt to load them
+   - Permission issues - the script will fix permissions
+   - Browser compatibility - use Chromium for best results
+   - CSI camera connection - ensure ribbon cables are properly seated
+
+4. If camera works in the test page but not in the application:
+   - Check browser permissions
+   - Try different camera resolutions in the application settings
+   - Restart the browser after connecting the camera

@@ -88,8 +88,8 @@ const removeData = (key: string): void => {
   } catch (error) {
     console.error(`Error removing data for key ${key}:`, error);
   }
-};
-
+    };
+    
 // Storage Service for managing scan history
 export class StorageService {
   // Add a new scan to history
@@ -97,7 +97,7 @@ export class StorageService {
     try {
       // Get current history
       let history = this.getScanHistory();
-      
+    
       // Add new scan at the beginning
       history = [scanItem, ...history];
       
@@ -106,7 +106,7 @@ export class StorageService {
       if (history.length > maxHistorySize) {
         history = history.slice(0, maxHistorySize);
       }
-      
+    
       // Store updated history securely
       this.saveScanHistory(history);
       
@@ -120,18 +120,18 @@ export class StorageService {
   // Get all scan history
   getScanHistory(): any[] {
     try {
-      const historyData = localStorage.getItem(SCAN_HISTORY_KEY);
-      if (!historyData) return [];
+    const historyData = localStorage.getItem(SCAN_HISTORY_KEY);
+    if (!historyData) return [];
       
       // Check if data is encrypted (starts with specific pattern after base64 decode)
       const isEncrypted = historyData.startsWith('eyJ') || historyData.length > 100;
-      
-      try {
+    
+    try {
         if (isEncrypted) {
           return JSON.parse(decryptData(historyData));
         } else {
           // Backward compatibility with non-encrypted data
-          return JSON.parse(historyData);
+      return JSON.parse(historyData);
         }
       } catch (error) {
         console.error('Error parsing scan history:', error);

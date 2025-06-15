@@ -17,7 +17,9 @@ export const cameraService = {
    */
   async initCamera(options: CameraOptions = {}): Promise<HTMLVideoElement> {
     try {
-      // Default options
+      console.log("CameraService: Initializing camera with options:", options);
+      
+      // Default options - optimized for Orange Pi performance
       const cameraOptions: CameraOptions = {
         width: options.width || 1280,
         height: options.height || 720,
@@ -31,22 +33,58 @@ export const cameraService = {
       // Request camera access with proper error handling and timeout
       let stream;
       try {
-        const streamPromise = navigator.mediaDevices.getUserMedia({
-          video: cameraOptions as MediaTrackConstraints,
-          audio: false
-        });
+        console.log("CameraService: Requesting user media with constraints:", cameraOptions);
         
-        // Tambahkan timeout untuk mencegah hanging pada perangkat Orange Pi
-        const timeoutPromise = new Promise<MediaStream>((_, reject) => {
-          setTimeout(() => reject(new Error("Camera access timed out after 10 seconds")), 10000);
-        });
+        // First try to enumerate devices to check if cameras exist
+        const devices = await this.getAvailableCameras();
+        if (devices.length === 0) {
+          throw new Error("No camera devices detected on this system");
+        }
         
-        stream = await Promise.race([streamPromise, timeoutPromise]);
+        console.log(`CameraService: Found ${devices.length} camera devices before requesting access`);
+        
+        // Try with specific device ID if available
+        if (devices.length > 0 && !cameraOptions.facingMode) {
+          console.log(`CameraService: Trying first available camera: ${devices[0].label}`);
+          
+          const streamPromise = navigator.mediaDevices.getUserMedia({
+            video: {
+              deviceId: { exact: devices[0].deviceId },
+              width: { ideal: cameraOptions.width || 1280 },
+              height: { ideal: cameraOptions.height || 720 },
+              frameRate: { ideal: cameraOptions.frameRate || 30, min: 10 }
+            } as MediaTrackConstraints,
+            audio: false
+          });
+          
+          // Tambahkan timeout untuk mencegah hanging pada perangkat Orange Pi
+          const timeoutPromise = new Promise<MediaStream>((_, reject) => {
+            setTimeout(() => reject(new Error("Camera access timed out after 10 seconds")), 10000);
+          });
+          
+          stream = await Promise.race([streamPromise, timeoutPromise]);
+          console.log(`CameraService: Successfully obtained camera stream for device: ${devices[0].label}`);
+        } else {
+          // Try with facingMode constraint
+          const streamPromise = navigator.mediaDevices.getUserMedia({
+            video: cameraOptions as MediaTrackConstraints,
+            audio: false
+          });
+          
+          // Tambahkan timeout untuk mencegah hanging pada perangkat Orange Pi
+          const timeoutPromise = new Promise<MediaStream>((_, reject) => {
+            setTimeout(() => reject(new Error("Camera access timed out after 10 seconds")), 10000);
+          });
+          
+          stream = await Promise.race([streamPromise, timeoutPromise]);
+          console.log("CameraService: Successfully obtained camera stream with facingMode");
+        }
       } catch (err) {
-        console.error('Camera access error:', err);
+        console.error('CameraService: Camera access error:', err);
         // Mencoba dengan fallback options jika kamera utama gagal
         if (cameraOptions.facingMode === 'environment') {
           try {
+            console.log("CameraService: Trying fallback to front camera");
             // Coba kamera depan jika kamera belakang gagal
             stream = await navigator.mediaDevices.getUserMedia({
               video: { 
@@ -57,13 +95,38 @@ export const cameraService = {
               } as MediaTrackConstraints,
               audio: false
             });
+            console.log("CameraService: Front camera fallback successful");
           } catch (frontErr) {
-            console.error('Front camera fallback failed:', frontErr);
+            console.error('CameraService: Front camera fallback failed:', frontErr);
             // Coba dengan constraints minimal sebagai upaya terakhir
-            stream = await navigator.mediaDevices.getUserMedia({
-              video: true,
-              audio: false
-            });
+            console.log("CameraService: Attempting with minimal constraints");
+            try {
+              // Try with just { video: true } - most basic constraint
+              stream = await navigator.mediaDevices.getUserMedia({
+                video: true,
+                audio: false
+              });
+              console.log("CameraService: Minimal constraints successful");
+            } catch (minErr) {
+              console.error('CameraService: Even minimal constraints failed:', minErr);
+              
+              // Special handling for Orange Pi - try with specific resolutions known to work
+              try {
+                console.log("CameraService: Trying Orange Pi specific settings (320x240)");
+                stream = await navigator.mediaDevices.getUserMedia({
+                  video: {
+                    width: { exact: 320 },
+                    height: { exact: 240 },
+                    frameRate: { ideal: 15 }
+                  },
+                  audio: false
+                });
+                console.log("CameraService: Orange Pi specific settings successful");
+              } catch (orangePiErr) {
+                console.error('CameraService: Orange Pi specific settings failed:', orangePiErr);
+                throw new Error("Could not access any camera on this device");
+              }
+            }
           }
         } else {
           // Re-throw error jika sudah mencoba semua opsi
@@ -72,27 +135,84 @@ export const cameraService = {
       }
       
       // Create and configure video element
+      console.log("CameraService: Creating video element");
       const video = document.createElement('video');
-      video.srcObject = stream;
+      
+      // Try to fix common browser/Chrome issues
+      video.setAttribute('playsinline', 'true');
+      video.setAttribute('webkit-playsinline', 'true');
+      video.setAttribute('muted', 'true');
+      video.muted = true;
+      video.volume = 0;
       video.autoplay = true;
-      video.playsInline = true; // Important for iOS
-      video.muted = true; // Ensure muted for autoplay
+      video.playsInline = true;
+      
+      // Set the stream as source
+      try {
+        video.srcObject = stream;
+        console.log("CameraService: Set stream as video source");
+      } catch (streamErr) {
+        console.error("CameraService: Error setting srcObject:", streamErr);
+        // Fallback for older browsers
+        try {
+          // @ts-ignore - For very old browsers that don't support srcObject
+          video.src = URL.createObjectURL(stream);
+          console.log("CameraService: Used URL.createObjectURL fallback");
+        } catch (urlErr) {
+          console.error("CameraService: Fallback also failed:", urlErr);
+          throw new Error("Browser cannot display camera stream");
+        }
+      }
+      
+      // Force a play attempt immediately
+      try {
+        await video.play();
+        console.log("CameraService: Initial video.play() successful");
+      } catch (playErr) {
+        console.warn("CameraService: Initial play attempt failed (may succeed later):", playErr);
+      }
       
       // Tunggu hingga video siap untuk dimainkan dengan timeout
+      console.log("CameraService: Waiting for video to be ready...");
       await Promise.race([
         new Promise<void>((resolve, reject) => {
           const loadTimeout = setTimeout(() => {
             reject(new Error('Video loading timeout after 10 seconds'));
           }, 10000);
           
-          video.onloadedmetadata = () => {
+          // Set up multiple event handlers to increase chances of success
+          const handleVideoReady = () => {
             clearTimeout(loadTimeout);
+            
+            if (video.videoWidth === 0 || video.videoHeight === 0) {
+              console.warn("CameraService: Video dimensions still zero despite 'loadedmetadata'");
+              // We'll still continue, the play() attempt below might fix it
+            } else {
+              console.log(`CameraService: Video dimensions: ${video.videoWidth}x${video.videoHeight}`);
+            }
+            
             video.play()
-              .then(() => resolve())
+              .then(() => {
+                console.log("CameraService: Video playing after metadata loaded");
+                resolve();
+              })
               .catch(e => {
-                console.error('Error playing video:', e);
+                console.error('CameraService: Error playing video after metadata:', e);
                 reject(e);
               });
+          };
+          
+          video.onloadedmetadata = handleVideoReady;
+          video.onloadeddata = () => {
+            console.log("CameraService: onloadeddata fired");
+            if (!video.onloadedmetadata) handleVideoReady();
+          };
+          
+          // Catch successful play events that might happen before metadata loaded
+          video.onplaying = () => {
+            console.log("CameraService: onplaying fired");
+            clearTimeout(loadTimeout);
+            resolve();
           };
         }),
         // Fallback timeout
@@ -107,15 +227,42 @@ export const cameraService = {
       }
       
       const videoTrack = stream.getVideoTracks()[0];
+      console.log(`CameraService: Video track: ${videoTrack.label}, state: ${videoTrack.readyState}`);
+      
       if (videoTrack.readyState !== 'live') {
-        throw new Error(`Video track not live, current state: ${videoTrack.readyState}`);
+        console.warn(`CameraService: Video track not live, current state: ${videoTrack.readyState}`);
+      }
+      
+      // Check if we actually have video dimensions
+      if (video.videoWidth === 0 || video.videoHeight === 0) {
+        console.warn("CameraService: Video dimensions still zero after all initialization");
+        
+        // Try one more time to get dimensions after a short delay
+        await new Promise<void>((resolve) => {
+          setTimeout(async () => {
+            try {
+              await video.play();
+              console.log(`CameraService: After delay - dimensions: ${video.videoWidth}x${video.videoHeight}`);
+            } catch (e) {
+              console.error("CameraService: Final play attempt failed:", e);
+            }
+            resolve();
+          }, 1000);
+        });
       }
       
       // Tambahkan handler untuk track ended
       videoTrack.onended = () => {
-        console.warn('Video track ended unexpectedly');
+        console.warn('CameraService: Video track ended unexpectedly');
         // Opsional: bisa otomatis restart kamera jika track terputus
       };
+      
+      // Verify we have valid dimensions before returning
+      if (video.videoWidth === 0 || video.videoHeight === 0) {
+        console.warn("CameraService: Returning video element with zero dimensions - may cause issues");
+      } else {
+        console.log(`CameraService: Final video dimensions: ${video.videoWidth}x${video.videoHeight}`);
+      }
       
       // Store references
       this.videoStream = stream;
@@ -124,8 +271,8 @@ export const cameraService = {
       // Return the video element
       return video;
     } catch (error) {
-      console.error('Camera initialization error:', error);
-      throw new Error('Failed to initialize camera. Please check camera permissions.');
+      console.error('CameraService: Camera initialization error:', error);
+      throw new Error('Failed to initialize camera: ' + (error instanceof Error ? error.message : String(error)));
     }
   },
   
@@ -228,17 +375,30 @@ export const cameraService = {
     try {
       // Coba untuk mendapatkan izin kamera terlebih dahulu dengan timeout
       try {
-        const permissionPromise = navigator.mediaDevices.getUserMedia({ video: true });
+        console.log("CameraService: Requesting camera permission for enumeration");
+        
+        // Try with minimal constraints first
+        const permissionPromise = navigator.mediaDevices.getUserMedia({ 
+          video: true,
+          audio: false
+        });
+        
         const timeoutPromise = new Promise<MediaStream>((_, reject) => {
           setTimeout(() => reject(new Error('Permission request timed out')), 5000);
         });
         
-        await Promise.race([permissionPromise, timeoutPromise]);
+        const stream = await Promise.race([permissionPromise, timeoutPromise]);
+        
+        // Immediately stop the stream after getting permission
+        stream.getTracks().forEach(track => track.stop());
+        console.log("CameraService: Successfully got camera permission for enumeration");
       } catch (error) {
-        console.warn('Could not get camera permission for device enumeration:', error);
+        console.warn('CameraService: Could not get camera permission for device enumeration:', error);
+        // Continue anyway - we might still get device info
       }
       
       // Dapatkan daftar perangkat
+      console.log("CameraService: Enumerating media devices");
       const devices = await navigator.mediaDevices.enumerateDevices();
       const videoDevices = devices.filter(device => device.kind === 'videoinput');
       
@@ -258,12 +418,35 @@ export const cameraService = {
       });
       
       // Log temuan perangkat kamera untuk debugging
-      console.log(`Found ${labeledDevices.length} camera devices:`, 
+      console.log(`CameraService: Found ${labeledDevices.length} camera devices:`, 
         labeledDevices.map(d => d.label));
+      
+      // Special handling for Orange Pi - add a fake camera if none detected but we're on Linux
+      if (labeledDevices.length === 0) {
+        try {
+          const userAgent = navigator.userAgent.toLowerCase();
+          if (userAgent.includes('linux')) {
+            console.log("CameraService: No cameras detected but running on Linux - might be Orange Pi camera issue");
+            
+            // Create a fake camera device for Orange Pi
+            const fakeCamera = {
+              deviceId: "orange-pi-camera",
+              groupId: "orange-pi",
+              kind: "videoinput" as MediaDeviceKind,
+              label: "Orange Pi Camera",
+              toJSON: () => { return {} }
+            };
+            
+            return [fakeCamera];
+          }
+        } catch (e) {
+          console.error("CameraService: Error in Orange Pi camera detection:", e);
+        }
+      }
       
       return labeledDevices;
     } catch (error) {
-      console.error('Error getting camera devices:', error);
+      console.error('CameraService: Error getting camera devices:', error);
       return [];
     }
   },
@@ -274,9 +457,69 @@ export const cameraService = {
    */
   async switchCamera(deviceId: string): Promise<HTMLVideoElement> {
     try {
+      console.log(`CameraService: Switching to camera with ID: ${deviceId}`);
+      
       // Close existing stream
       this.stopCamera();
       
+      // Handle special case for Orange Pi camera
+      if (deviceId === "orange-pi-camera") {
+        console.log("CameraService: Using special handling for Orange Pi camera");
+        
+        // Try different resolutions that might work on Orange Pi
+        const resolutions = [
+          { width: 640, height: 480 },
+          { width: 320, height: 240 },
+          { width: 1280, height: 720 }
+        ];
+        
+        let stream = null;
+        let error = null;
+        
+        // Try each resolution until one works
+        for (const resolution of resolutions) {
+          try {
+            console.log(`CameraService: Trying Orange Pi camera with resolution ${resolution.width}x${resolution.height}`);
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: {
+                width: { ideal: resolution.width },
+                height: { ideal: resolution.height },
+                frameRate: { ideal: 15 }
+              },
+              audio: false
+            });
+            
+            console.log(`CameraService: Successfully accessed Orange Pi camera at ${resolution.width}x${resolution.height}`);
+            break;
+          } catch (err) {
+            error = err;
+            console.warn(`CameraService: Failed with resolution ${resolution.width}x${resolution.height}:`, err);
+          }
+        }
+        
+        if (!stream) {
+          console.error("CameraService: All Orange Pi camera resolutions failed");
+          throw error || new Error("Could not access Orange Pi camera");
+        }
+        
+        // Create and configure video element
+        const video = document.createElement('video');
+        video.srcObject = stream;
+        video.autoplay = true;
+        video.playsInline = true;
+        video.muted = true;
+        
+        // Wait for video to be ready
+        await video.play();
+        
+        // Store references
+        this.videoStream = stream;
+        this.videoElement = video;
+        
+        return video;
+      }
+      
+      // Normal camera switching for standard devices
       // Request access to the specific camera with timeout
       const streamPromise = navigator.mediaDevices.getUserMedia({
         video: { 

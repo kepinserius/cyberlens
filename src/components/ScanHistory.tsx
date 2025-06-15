@@ -99,7 +99,7 @@ export default function ScanHistory({ history, onHistoryUpdated, onClose }: Scan
 
     setShowDeleteConfirm(null)
     if (onHistoryUpdated) {
-      onHistoryUpdated()
+    onHistoryUpdated()
     }
   }
 
@@ -107,7 +107,7 @@ export default function ScanHistory({ history, onHistoryUpdated, onClose }: Scan
     localStorage.removeItem("scanHistory")
     setSelectedItem(null)
     if (onHistoryUpdated) {
-      onHistoryUpdated()
+    onHistoryUpdated()
     }
   }
 

@@ -128,23 +128,23 @@ export default function CyberLensApp() {
       setIsAnalyzing(true)
       addNotification(t('analysis.analyzing'), 'info')
       
-      // Simulate analysis delay
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      // Import OCR service
+      const { ocrService } = await import('./services/ocrService')
       
-      // Mock analysis result
-      const mockResult: AnalysisResult = {
-        riskLevel: 'medium',
-        confidenceScore: 78,
-        summary: 'Potential security vulnerability detected',
-        recommendations: [
-          'Update security protocols',
-          'Monitor network traffic',
-          'Review access permissions'
-        ],
+      // Analyze image using OCR service
+      console.log('Sending image to OCR service for analysis...')
+      const result = await ocrService.analyzeImageWithOCR(imageData)
+      
+      // Convert OCR result to AnalysisResult format
+      const analysisResult: AnalysisResult = {
+        riskLevel: result.riskLevel as 'low' | 'medium' | 'high' | 'critical' | 'unknown',
+        confidenceScore: result.confidenceScore * 100, // Convert to percentage
+        summary: result.summary,
+        recommendations: result.recommendations,
         timestamp: new Date().toISOString()
       }
       
-      setAnalysisResult(mockResult)
+      setAnalysisResult(analysisResult)
       addNotification(t('analysis.completed'), 'success')
       
       // Add to history
@@ -152,7 +152,7 @@ export default function CyberLensApp() {
         id: Date.now().toString(),
         timestamp: new Date().toISOString(),
         image: imageData,
-        result: mockResult
+        result: analysisResult
       }
       setScanHistory(prev => [newScan, ...prev])
       
@@ -293,13 +293,13 @@ export default function CyberLensApp() {
               <div className="animate-pulse flex flex-col items-center">
                 <div className="w-12 h-12 rounded-full bg-blue-500/20 mb-3"></div>
                 <div className="text-sm text-slate-300">Memuat riwayat...</div>
-              </div>
-            </div>
+                  </div>
+                </div>
           }>
-            <ScanHistory 
-              history={scanHistory} 
+              <ScanHistory 
+                history={scanHistory} 
               onClose={() => setShowHistory(false)} 
-            />
+              />
           </Suspense>
         )}
       </main>

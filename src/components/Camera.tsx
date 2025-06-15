@@ -5,45 +5,11 @@ import { Camera, CameraIcon as Capture, AlertCircle, RotateCcw, Loader2 } from "
 import { Button } from "./ui/button"
 import { Card } from "./ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
+import { cameraService } from "../services/cameraService"
 
 interface CameraProps {
   onCapture: (imageData: string) => void
   isScanning: boolean
-}
-
-// Mock camera service for demonstration
-const cameraService = {
-  videoElement: null as HTMLVideoElement | null,
-  videoStream: null as MediaStream | null,
-
-  async getAvailableCameras(): Promise<MediaDeviceInfo[]> {
-    try {
-      const devices = await navigator.mediaDevices.enumerateDevices()
-      return devices.filter((device) => device.kind === "videoinput")
-    } catch (error) {
-      console.error("Error getting camera devices:", error)
-      return []
-    }
-  },
-
-  captureFrame(): string {
-    if (!this.videoElement) {
-      throw new Error("Video element not available")
-    }
-
-    const canvas = document.createElement("canvas")
-    const context = canvas.getContext("2d")
-
-    if (!context) {
-      throw new Error("Canvas context not available")
-    }
-
-    canvas.width = this.videoElement.videoWidth
-    canvas.height = this.videoElement.videoHeight
-    context.drawImage(this.videoElement, 0, 0)
-
-    return canvas.toDataURL("image/jpeg", 0.8)
-  },
 }
 
 export default function CameraComponent({ onCapture, isScanning }: CameraProps) {
@@ -63,29 +29,22 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
   // Request camera permission and get available cameras
   const requestCameraPermission = async () => {
     try {
-      // Request permission first with a timeout
-      const permissionPromise = navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: "environment" } 
-      })
+      setIsRetrying(true)
+      console.log("Requesting camera permission...")
       
-      // Add timeout to handle hanging camera permission requests
-      const timeoutPromise = new Promise<MediaStream>((_, reject) => {
-        setTimeout(() => reject(new Error("Camera permission request timed out")), 10000)
-      })
-      
-      // Race between permission request and timeout
-      await Promise.race([permissionPromise, timeoutPromise])
-
-      // Get available cameras after permission is granted
+      // Get available cameras using the cameraService
       const devices = await cameraService.getAvailableCameras()
+      console.log(`Found ${devices.length} camera devices:`, devices.map(d => d.label))
       setCameraDevices(devices)
 
       if (devices.length > 0) {
+        // Select the first camera by default
         setSelectedDeviceId(devices[0].deviceId)
         setHasPermission(true)
         return devices
       } else {
         setError("No camera devices found. Please connect a camera and try again.")
+        setHasPermission(false)
         return []
       }
     } catch (err) {
@@ -94,19 +53,18 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       const errorMsg = err instanceof Error ? err.message : "Failed to initialize camera"
       setError(`Camera error: ${errorMsg}. Please check connections and permissions.`)
       return []
+    } finally {
+      setIsRetrying(false)
     }
   }
 
   // Stop camera stream
-  const stopCameraStream = () => {
+  const stopCameraStream = useCallback(() => {
+    // Use cameraService to stop the camera properly
+    cameraService.stopCamera()
+    
+    // Also clean up our local references
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => {
-        try {
-          track.stop()
-        } catch (e) {
-          console.error("Error stopping track:", e)
-        }
-      })
       streamRef.current = null
     }
     
@@ -115,92 +73,74 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
     }
     
     setIsCameraActive(false)
-  }
+  }, [])
 
   // Start camera with specific device
   const startCamera = useCallback(async (deviceId?: string) => {
     try {
       setError(null)
       setIsRetrying(true)
+      
+      console.log("Starting camera initialization...");
 
       // Stop any existing stream
       stopCameraStream()
 
-      // Camera options for Orange Pi compatibility
-      const cameraOptions: MediaTrackConstraints = {
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-        frameRate: { ideal: 30, min: 10 }, // Add frameRate constraints
-        facingMode: "environment",
-      }
-
-      // Use specific device if provided
+      // Use cameraService to initialize the camera
+      const video = await cameraService.initCamera({
+        width: 1280,
+        height: 720,
+        frameRate: 30,
+        facingMode: deviceId ? undefined : 'environment'
+      });
+      
+      // If a specific device was requested, switch to it
       if (deviceId) {
-        delete cameraOptions.facingMode
-        cameraOptions.deviceId = { exact: deviceId }
-      }
-
-      let stream: MediaStream
-      try {
-        // Add timeout to prevent hanging camera initialization
-        const streamPromise = navigator.mediaDevices.getUserMedia({
-          video: cameraOptions,
-          audio: false,
-        })
-        
-        const timeoutPromise = new Promise<MediaStream>((_, reject) => {
-          setTimeout(() => reject(new Error("Camera access timed out")), 10000)
-        })
-        
-        stream = await Promise.race([streamPromise, timeoutPromise])
-      } catch (err) {
-        console.error("First camera attempt failed:", err)
-        
-        // Fallback to front camera if back camera fails
-        if (!deviceId) {
-          try {
-            stream = await navigator.mediaDevices.getUserMedia({
-              video: { 
-                facingMode: "user",
-                width: { ideal: 640 }, // Reduce resolution for fallback
-                height: { ideal: 480 } 
-              },
-              audio: false,
-            })
-          } catch (frontErr) {
-            console.error("Front camera fallback failed:", frontErr)
-            // Try one more time with minimal constraints
-            stream = await navigator.mediaDevices.getUserMedia({
-              video: true,
-              audio: false,
-            })
-          }
-        } else {
-          throw err
+        try {
+          console.log(`Switching to specific camera device: ${deviceId}`);
+          await cameraService.switchCamera(deviceId);
+        } catch (switchErr) {
+          console.error("Error switching camera:", switchErr);
+          // Continue with the default camera if switch fails
         }
       }
-
-      // Store stream reference
-      streamRef.current = stream
-
-      // Set video source
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
+      
+      // Attach the video element to our UI
+      if (videoRef.current && cameraService.videoElement) {
+        // Replace the existing video element's srcObject
+        videoRef.current.srcObject = cameraService.videoElement.srcObject;
+        
+        // Set up event handlers
         videoRef.current.onloadedmetadata = async () => {
           try {
-            await videoRef.current!.play()
-            // Update camera service
-            cameraService.videoElement = videoRef.current
-            cameraService.videoStream = stream
-            setIsCameraActive(true)
+            await videoRef.current!.play();
+            console.log("Video playing successfully in UI component");
+            setIsCameraActive(true);
             // Reset init attempts on success
-            initAttemptRef.current = 0
+            initAttemptRef.current = 0;
           } catch (playErr) {
-            console.error("Error playing video:", playErr)
-            setError("Failed to play video stream. Please try again.")
+            console.error("Error playing video in UI:", playErr);
+            setError("Failed to display camera feed. Please try again.");
           }
+        };
+      } else {
+        // Fallback: create a container and append the video from cameraService
+        const container = document.createElement('div');
+        container.className = 'video-container';
+        container.style.width = '100%';
+        container.style.height = '100%';
+        
+        if (videoRef.current && videoRef.current.parentNode && cameraService.videoElement) {
+          videoRef.current.parentNode.appendChild(cameraService.videoElement);
+          videoRef.current.parentNode.removeChild(videoRef.current);
+          setIsCameraActive(true);
         }
       }
+      
+      // Store stream reference
+      streamRef.current = cameraService.videoStream;
+      setIsCameraActive(true);
+      
     } catch (err) {
       console.error("Camera initialization error:", err)
       const errorMsg = err instanceof Error ? err.message : "Unknown error"
@@ -217,14 +157,14 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
     } finally {
       setIsRetrying(false)
     }
-  }, [])
+  }, [stopCameraStream])
 
   // Initialize camera on mount
   useEffect(() => {
     const initCamera = async () => {
       const devices = await requestCameraPermission()
       if (devices.length > 0) {
-        await startCamera()
+        await startCamera(devices[0].deviceId)
       }
     }
 
@@ -234,7 +174,7 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
     return () => {
       stopCameraStream()
     }
-  }, [startCamera])
+  }, [startCamera, stopCameraStream])
 
   // Handle camera device change
   const handleCameraChange = async (deviceId: string) => {
@@ -250,7 +190,7 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
 
     const devices = await requestCameraPermission()
     if (devices.length > 0) {
-      await startCamera(selectedDeviceId || undefined)
+      await startCamera(selectedDeviceId || devices[0].deviceId)
     }
   }
 
@@ -297,11 +237,10 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
 
     const captureInterval = setInterval(() => {
       try {
-        // Check if video element and stream are valid
-        if (!videoRef.current || !streamRef.current || 
-            !streamRef.current.active || 
-            !videoRef.current.videoWidth || 
-            !videoRef.current.videoHeight) {
+        // Check if video element and stream are valid using cameraService
+        if (!cameraService.videoElement || !cameraService.videoStream || 
+            !cameraService.videoElement.videoWidth || 
+            !cameraService.videoElement.videoHeight) {
           
           captureAttempts++;
           console.warn(`Camera stream not ready for capture (attempt ${captureAttempts}/${maxCaptureAttempts})`)
@@ -310,7 +249,7 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
           if (captureAttempts >= maxCaptureAttempts) {
             console.error("Max capture attempts reached, restarting camera")
             captureAttempts = 0
-            startCamera(selectedDeviceId || undefined)
+            startCamera(selectedDeviceId)
           }
           return
         }
@@ -328,7 +267,7 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
         if (captureAttempts >= maxCaptureAttempts) {
           console.error("Max capture error attempts reached, restarting camera")
           captureAttempts = 0
-          startCamera(selectedDeviceId || undefined)
+          startCamera(selectedDeviceId)
         }
       }
     }, captureDelayMs)
@@ -364,7 +303,18 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       {/* Camera View */}
       <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
         {/* Video Element */}
-        {isCameraActive && <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />}
+        {isCameraActive && (
+          <video 
+            ref={videoRef} 
+            autoPlay 
+            playsInline 
+            muted 
+            className="w-full h-full object-cover" 
+            onLoadedMetadata={() => console.log("Video element onLoadedMetadata event fired")}
+            onPlaying={() => console.log("Video element onPlaying event fired")}
+            onError={(e) => console.error("Video element error event:", e)}
+          />
+        )}
 
         {/* Loading State */}
         {!isCameraActive && !error && (
