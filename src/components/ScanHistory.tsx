@@ -90,24 +90,56 @@ export default function ScanHistory({ history, onHistoryUpdated, onClose }: Scan
   }
 
   const handleDeleteItem = (id: string) => {
-    const updatedHistory = history.filter((item) => item.id !== id)
-    localStorage.setItem("scanHistory", JSON.stringify(updatedHistory))
-
-    if (selectedItem && selectedItem.id === id) {
-      setSelectedItem(null)
-    }
-
-    setShowDeleteConfirm(null)
-    if (onHistoryUpdated) {
-    onHistoryUpdated()
+    try {
+      // Get current history from localStorage
+      const currentHistoryStr = localStorage.getItem("scanHistory");
+      let currentHistory = [];
+      
+      if (currentHistoryStr) {
+        currentHistory = JSON.parse(currentHistoryStr);
+      }
+      
+      // Filter out the item to delete
+      const updatedHistory = currentHistory.filter((item: ScanHistoryItem) => item.id !== id);
+      
+      // Save updated history back to localStorage
+      localStorage.setItem("scanHistory", JSON.stringify(updatedHistory));
+      
+      // Reset selected item if it was deleted
+      if (selectedItem && selectedItem.id === id) {
+        setSelectedItem(null);
+      }
+      
+      // Reset delete confirmation state
+      setShowDeleteConfirm(null);
+      
+      // Notify parent component that history was updated
+      if (onHistoryUpdated) {
+        onHistoryUpdated();
+      }
+      
+      console.log(`Item with ID ${id} successfully deleted`);
+    } catch (error) {
+      console.error("Error deleting item:", error);
     }
   }
 
   const handleClearAll = () => {
-    localStorage.removeItem("scanHistory")
-    setSelectedItem(null)
-    if (onHistoryUpdated) {
-    onHistoryUpdated()
+    try {
+      // Remove scan history from localStorage
+      localStorage.removeItem("scanHistory");
+      
+      // Reset selected item
+      setSelectedItem(null);
+      
+      // Notify parent component that history was updated
+      if (onHistoryUpdated) {
+        onHistoryUpdated();
+      }
+      
+      console.log("All scan history cleared successfully");
+    } catch (error) {
+      console.error("Error clearing scan history:", error);
     }
   }
 

@@ -60,6 +60,12 @@ export const cameraService = {
     try {
       console.log("CameraService: Initializing camera with options:", options);
       
+      // Set mirror mode from options if provided
+      if (options.mirrored !== undefined) {
+        this.isMirrored = options.mirrored;
+        console.log(`CameraService: Setting mirror mode to ${options.mirrored}`);
+      }
+      
       // Check browser support
       const browserSupport = this.checkBrowserSupport();
       console.log("CameraService: Browser support info:", browserSupport);
@@ -573,10 +579,9 @@ export const cameraService = {
   setMirrorMode(mirrored: boolean): void {
     this.isMirrored = mirrored;
     
-    // Apply mirror effect to video element if it exists
-    if (this.videoElement) {
-      this.videoElement.style.transform = mirrored ? 'scaleX(-1)' : 'scaleX(1)';
-    }
+    // We'll let the component handle the CSS transformation
+    // instead of directly manipulating the DOM here
+    console.log(`CameraService: Mirror mode ${mirrored ? 'enabled' : 'disabled'}`);
   },
   
   /**

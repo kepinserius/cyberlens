@@ -38,15 +38,8 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       // Update camera service mirror mode
       cameraService.setMirrorMode(newValue);
       
-      if (videoRef.current) {
-        if (newValue) {
-          // Apply mirror effect
-          videoRef.current.style.transform = 'scaleX(-1)';
-        } else {
-          // Remove mirror effect
-          videoRef.current.style.transform = 'scaleX(1)';
-        }
-      }
+      // We'll apply the CSS transform in the render function instead of directly
+      // manipulating the DOM to avoid potential issues
       
       return newValue;
     });
@@ -57,10 +50,6 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
     const savedMirrorMode = localStorage.getItem('camera_mirror_mode');
     if (savedMirrorMode === 'true') {
       setIsMirrored(true);
-      // Apply mirror effect if video element exists
-      if (videoRef.current) {
-        videoRef.current.style.transform = 'scaleX(-1)';
-      }
       // Update camera service mirror mode
       cameraService.setMirrorMode(true);
     }
@@ -156,13 +145,6 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       if (videoRef.current && cameraService.videoElement) {
         // Replace the existing video element's srcObject
         videoRef.current.srcObject = cameraService.videoElement.srcObject;
-        
-        // Apply mirror effect if enabled
-        if (isMirrored) {
-          videoRef.current.style.transform = 'scaleX(-1)';
-        } else {
-          videoRef.current.style.transform = 'scaleX(1)';
-        }
         
         // Set up event handlers
         videoRef.current.onloadedmetadata = async () => {
@@ -267,13 +249,6 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
         
         // Set new srcObject
         videoRef.current.srcObject = video.srcObject;
-        
-        // Apply mirror effect if enabled
-        if (isMirrored) {
-          videoRef.current.style.transform = 'scaleX(-1)';
-        } else {
-          videoRef.current.style.transform = 'scaleX(1)';
-        }
         
         try {
           await videoRef.current.play();
@@ -404,6 +379,22 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
     }
   }
 
+  // Capture image from video stream
+  const captureImage = useCallback(() => {
+    if (!videoRef.current) return
+    
+    try {
+      // Use cameraService to capture frame with mirror mode
+      const imageData = cameraService.captureFrame(isMirrored);
+      
+      // Pass the image data to the parent component
+      onCapture(imageData);
+    } catch (err) {
+      console.error("Error capturing image:", err)
+      setError("Failed to capture image. Please try again.")
+    }
+  }, [onCapture, isMirrored])
+
   // Handle capture button click
   const handleCaptureClick = useCallback(async () => {
     if (!isCameraActive || !videoRef.current) return
@@ -428,23 +419,7 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       // If already scanning, capture immediately
       captureImage()
     }
-  }, [isCameraActive, isScanning])
-
-  // Capture image from video stream
-  const captureImage = useCallback(() => {
-    if (!videoRef.current) return
-    
-    try {
-      // Use cameraService to capture frame with mirror mode
-      const imageData = cameraService.captureFrame(isMirrored);
-      
-      // Pass the image data to the parent component
-      onCapture(imageData);
-    } catch (err) {
-      console.error("Error capturing image:", err)
-      setError("Failed to capture image. Please try again.")
-    }
-  }, [onCapture, isMirrored])
+  }, [isCameraActive, isScanning, captureImage])
 
   // Auto-capture when scanning
   useEffect(() => {
@@ -476,8 +451,8 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
         // Reset capture attempts counter on success
         captureAttempts = 0
         
-        // Attempt to capture the frame
-        const imageData = cameraService.captureFrame()
+        // Attempt to capture the frame with mirror mode
+        const imageData = cameraService.captureFrame(isMirrored)
         onCapture(imageData)
       } catch (err) {
         console.error("Auto-capture error:", err)
@@ -494,7 +469,7 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
     return () => {
       clearInterval(captureInterval)
     }
-  }, [isScanning, isCameraActive, onCapture, startCamera, selectedDeviceId])
+  }, [isScanning, isCameraActive, onCapture, startCamera, selectedDeviceId, isMirrored])
 
   // Error state
   if (hasPermission === false) {
@@ -542,6 +517,7 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
             playsInline 
             muted 
             className={`w-full h-full object-cover ${isMirrored ? 'scale-x-[-1]' : ''}`}
+            style={{ transform: isMirrored ? 'scaleX(-1)' : 'scaleX(1)' }}
             onLoadedMetadata={() => console.log("Video element onLoadedMetadata event fired")}
             onPlaying={() => console.log("Video element onPlaying event fired")}
             onError={(e) => console.error("Video element error event:", e)}

@@ -64,27 +64,29 @@ export default function CyberLensApp() {
 
   // Load scan history from storage
   const loadScanHistory = useCallback(() => {
-    // Mock data for demonstration
-    const mockHistory: ScanHistoryItem[] = [
-      {
-        id: '1',
-        timestamp: new Date().toISOString(),
-        image: '/placeholder.svg?height=100&width=100',
-        result: {
-          riskLevel: 'low',
-          confidenceScore: 85,
-          summary: 'No threats detected',
-          recommendations: ['Continue monitoring'],
-          timestamp: new Date().toISOString()
-        }
+    // Try to load scan history from localStorage
+    try {
+      const savedHistory = localStorage.getItem('scanHistory');
+      if (savedHistory) {
+        const parsedHistory = JSON.parse(savedHistory);
+        setScanHistory(parsedHistory);
+      } else {
+        setScanHistory([]);
       }
-    ]
-    setScanHistory(mockHistory)
-  }, [])
+    } catch (error) {
+      console.error('Error loading scan history:', error);
+      setScanHistory([]);
+    }
+  }, []);
+
+  // Update scan history when items are deleted
+  const handleHistoryUpdated = useCallback(() => {
+    loadScanHistory();
+  }, [loadScanHistory]);
 
   // Load scan history on component mount
   useEffect(() => {
-    loadScanHistory()
+    loadScanHistory();
   }, [loadScanHistory])
 
   // Add keyboard shortcut for admin panel
@@ -154,7 +156,18 @@ export default function CyberLensApp() {
         image: imageData,
         result: analysisResult
       }
-      setScanHistory(prev => [newScan, ...prev])
+      
+      // Update state with new scan
+      const updatedHistory = [newScan, ...scanHistory];
+      setScanHistory(updatedHistory)
+      
+      // Save to localStorage
+      try {
+        localStorage.setItem('scanHistory', JSON.stringify(updatedHistory));
+      } catch (storageError) {
+        console.error('Error saving scan history to localStorage:', storageError);
+        // If localStorage fails, at least the state is updated
+      }
       
     } catch (error) {
       console.error('Error analyzing image:', error)
@@ -298,7 +311,8 @@ export default function CyberLensApp() {
           }>
               <ScanHistory 
                 history={scanHistory} 
-              onClose={() => setShowHistory(false)} 
+                onClose={() => setShowHistory(false)} 
+                onHistoryUpdated={handleHistoryUpdated}
               />
           </Suspense>
         )}
