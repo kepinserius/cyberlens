@@ -178,20 +178,47 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       setError(null);
       setIsRetrying(true);
       
-      // Stop current camera first
+      // Completely stop current camera and stream first
       stopCameraStream();
+      
+      // Force any active video element to stop
+      if (videoRef.current) {
+        videoRef.current.pause();
+        if (videoRef.current.srcObject) {
+          const stream = videoRef.current.srcObject as MediaStream;
+          if (stream) {
+            stream.getTracks().forEach(track => {
+              track.enabled = false;
+              track.stop();
+            });
+          }
+          videoRef.current.srcObject = null;
+        }
+      }
       
       // Update selected device ID
       setSelectedDeviceId(deviceId);
       
       // Force a small delay to ensure clean switch
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       // Directly use switchCamera from cameraService instead of startCamera
       const video = await cameraService.switchCamera(deviceId);
       
       // Update video reference
       if (videoRef.current) {
+        // Make sure old srcObject is cleared
+        if (videoRef.current.srcObject) {
+          const oldStream = videoRef.current.srcObject as MediaStream;
+          if (oldStream) {
+            oldStream.getTracks().forEach(track => {
+              track.enabled = false;
+              track.stop();
+            });
+          }
+        }
+        
+        // Set new srcObject
         videoRef.current.srcObject = video.srcObject;
         
         try {
@@ -206,6 +233,14 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       streamRef.current = cameraService.videoStream;
       setIsCameraActive(true);
       console.log(`Successfully switched to camera: ${deviceId}`);
+      
+      // Verify which camera is active
+      if (cameraService.videoStream) {
+        const tracks = cameraService.videoStream.getVideoTracks();
+        tracks.forEach(track => {
+          console.log(`Active video track: ${track.label}, enabled: ${track.enabled}, state: ${track.readyState}`);
+        });
+      }
     } catch (err) {
       console.error("Error switching camera:", err);
       const errorMsg = err instanceof Error ? err.message : "Unknown error";
@@ -225,6 +260,12 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       setError(null)
       console.log("Refreshing camera devices list...")
       
+      // First stop any active camera
+      stopCameraStream();
+      
+      // Wait a moment for resources to be released
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       // Use the new refreshCameraDevices method with priority for external cameras
       await cameraService.refreshCameraDevices()
       const devices = await cameraService.getAvailableCamerasWithPriority()
@@ -239,7 +280,6 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
         if (externalCamera && !devices.find(d => d.deviceId === selectedDeviceId && cameraService.isExternalCamera(d))) {
           console.log("External camera detected, switching to it automatically");
           const validDeviceId = externalCamera.deviceId;
-          setSelectedDeviceId(validDeviceId);
           
           // Use cameraService.switchCamera directly instead of handleCameraChange
           try {
@@ -247,13 +287,30 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
             stopCameraStream();
             
             // Force a small delay to ensure clean switch
-            await new Promise(resolve => setTimeout(resolve, 300));
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Update selected device ID before switching
+            setSelectedDeviceId(validDeviceId);
             
             // Switch camera
+            console.log(`Directly switching to external camera: ${validDeviceId}`);
             const video = await cameraService.switchCamera(validDeviceId);
             
             // Update video reference
             if (videoRef.current) {
+              // Make sure old srcObject is cleared
+              if (videoRef.current.srcObject) {
+                const oldStream = videoRef.current.srcObject as MediaStream;
+                if (oldStream) {
+                  oldStream.getTracks().forEach(track => {
+                    track.enabled = false;
+                    track.stop();
+                  });
+                }
+                videoRef.current.srcObject = null;
+              }
+              
+              // Set new srcObject
               videoRef.current.srcObject = video.srcObject;
               await videoRef.current.play();
             }
@@ -262,6 +319,14 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
             streamRef.current = cameraService.videoStream;
             setIsCameraActive(true);
             console.log(`Successfully switched to external camera: ${validDeviceId}`);
+            
+            // Verify active tracks
+            if (cameraService.videoStream) {
+              const tracks = cameraService.videoStream.getVideoTracks();
+              tracks.forEach(track => {
+                console.log(`Active video track: ${track.label}, enabled: ${track.enabled}, state: ${track.readyState}`);
+              });
+            }
           } catch (err) {
             console.error("Error switching to external camera:", err);
             await startCamera(); // Fallback to default camera
@@ -276,6 +341,9 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
           const validDeviceId = devices[0].deviceId || "default"
           setSelectedDeviceId(validDeviceId)
           await startCamera(validDeviceId)
+        } else {
+          // Restart current camera to ensure clean state
+          await startCamera(selectedDeviceId);
         }
         setHasPermission(true)
       } else {

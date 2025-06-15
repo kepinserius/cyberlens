@@ -427,6 +427,13 @@ export const cameraService = {
         try {
           track.stop();
           console.log(`CameraService: Stopped track: ${track.label}`);
+          
+          // Double check track is stopped
+          if (track.readyState !== "ended") {
+            console.warn(`CameraService: Track ${track.label} not properly stopped, forcing...`);
+            track.enabled = false; // Disable the track first
+            track.stop(); // Try stopping again
+          }
         } catch (e) {
           console.error('Error stopping track:', e);
         }
@@ -437,7 +444,18 @@ export const cameraService = {
     if (this.videoElement) {
       try {
         if (this.videoElement.srcObject) {
-      this.videoElement.srcObject = null;
+          // Stop all tracks from srcObject as well (redundant but thorough)
+          const srcObj = this.videoElement.srcObject as MediaStream;
+          if (srcObj && srcObj.getTracks) {
+            srcObj.getTracks().forEach(track => {
+              try {
+                track.stop();
+              } catch (e) {
+                // Ignore errors
+              }
+            });
+          }
+          this.videoElement.srcObject = null;
         }
         this.videoElement.onloadedmetadata = null;
         this.videoElement.onloadeddata = null;
@@ -461,6 +479,15 @@ export const cameraService = {
       } catch (e) {
         // Ignore errors
       }
+    }
+    
+    // Additional attempt to release camera resources
+    try {
+      navigator.mediaDevices.enumerateDevices()
+        .then(() => console.log("CameraService: Device enumeration completed after cleanup"))
+        .catch(e => console.warn("CameraService: Device enumeration error after cleanup:", e));
+    } catch (e) {
+      // Ignore errors
     }
   },
   
@@ -658,10 +685,38 @@ export const cameraService = {
     try {
       console.log(`CameraService: Switching to camera with ID: ${deviceId}`);
       
-      // Close existing stream
+      // Force stop ALL active tracks from any previous streams
+      if (this.videoStream) {
+        console.log("CameraService: Stopping all tracks from previous stream");
+        this.videoStream.getTracks().forEach(track => {
+          try {
+            track.stop();
+            console.log(`CameraService: Stopped track: ${track.label}, enabled: ${track.enabled}, state: ${track.readyState}`);
+          } catch (e) {
+            console.error('Error stopping track:', e);
+          }
+        });
+      }
+      
+      // Close existing stream and cleanup
       this.stopCamera();
       
       // Add a small delay to ensure clean switch
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Force browser to release camera resources
+      try {
+        // This might help release camera resources in some browsers
+        await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+          .then(stream => {
+            stream.getTracks().forEach(track => track.stop());
+          })
+          .catch(() => {});
+      } catch (e) {
+        // Ignore errors here, just trying to force resource release
+      }
+      
+      // Add another small delay after resource release attempt
       await new Promise(resolve => setTimeout(resolve, 300));
       
       // Handle special case for default camera
@@ -814,6 +869,11 @@ export const cameraService = {
       
       const stream = await Promise.race([streamPromise, timeoutPromise]);
       console.log(`CameraService: Successfully obtained stream for device: ${deviceId}`);
+      
+      // Log all tracks to verify
+      stream.getTracks().forEach(track => {
+        console.log(`CameraService: New track: ${track.label}, enabled: ${track.enabled}, state: ${track.readyState}`);
+      });
       
       // Create and configure video element
       const video = document.createElement('video');
