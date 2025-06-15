@@ -57,7 +57,8 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
     useAsBackup: true,
     enhancedProcessing: true,
     languages: "ind+eng",
-    minConfidence: 0.3
+    minConfidence: 0.3,
+    createVariations: true
   })
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({
     checking: false,

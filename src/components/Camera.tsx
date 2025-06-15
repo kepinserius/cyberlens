@@ -19,7 +19,7 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
   const maxInitAttempts = 3 // Maximum number of initialization attempts
 
   const [cameraDevices, setCameraDevices] = useState<MediaDeviceInfo[]>([])
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string>("")
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>("default")
   const [isCameraActive, setIsCameraActive] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [countdown, setCountdown] = useState<number | null>(null)
@@ -45,6 +45,8 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       } else {
         setError("No camera devices found. Please connect a camera and try again.")
         setHasPermission(false)
+        // Set a default device ID to prevent empty string value
+        setSelectedDeviceId("default")
         return []
       }
     } catch (err) {
@@ -52,6 +54,8 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       setHasPermission(false)
       const errorMsg = err instanceof Error ? err.message : "Failed to initialize camera"
       setError(`Camera error: ${errorMsg}. Please check connections and permissions.`)
+      // Set a default device ID to prevent empty string value
+      setSelectedDeviceId("default")
       return []
     } finally {
       setIsRetrying(false)
@@ -164,7 +168,10 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
     const initCamera = async () => {
       const devices = await requestCameraPermission()
       if (devices.length > 0) {
-        await startCamera(devices[0].deviceId)
+        // Ensure we have a valid deviceId
+        const validDeviceId = devices[0].deviceId || "default"
+        setSelectedDeviceId(validDeviceId)
+        await startCamera(validDeviceId)
       }
     }
 
@@ -178,6 +185,10 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
 
   // Handle camera device change
   const handleCameraChange = async (deviceId: string) => {
+    if (!deviceId) {
+      console.error("Empty deviceId provided to handleCameraChange");
+      return;
+    }
     setSelectedDeviceId(deviceId)
     await startCamera(deviceId)
   }
@@ -279,12 +290,25 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
 
   // Error state
   if (hasPermission === false) {
+    // Check if we're on Linux to provide more specific guidance
+    const isLinux = navigator.userAgent.toLowerCase().includes('linux');
+    const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
+    
+    let errorMessage = error;
+    let helpText = "Try reconnecting your camera or check browser permissions.";
+    
+    if (isLinux && !isFirefox && error?.includes("Could not access any camera")) {
+      errorMessage = "Camera access failed on Linux";
+      helpText = "Linux often works better with Firefox browser for camera access. Try switching browsers or check if your camera is enabled in system settings.";
+    }
+    
     return (
       <Card className="aspect-video flex items-center justify-center bg-gradient-to-br from-red-50 to-red-100 dark:from-red-950/20 dark:to-red-900/20 border-red-200 dark:border-red-800">
         <div className="text-center p-8">
           <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
           <h3 className="text-lg font-semibold text-red-700 dark:text-red-400 mb-2">Camera Access Denied</h3>
-          <p className="text-red-600 dark:text-red-300 mb-4">{error}</p>
+          <p className="text-red-600 dark:text-red-300 mb-4">{errorMessage}</p>
+          <p className="text-red-600 dark:text-red-300 mb-4 text-sm">{helpText}</p>
           <Button
             onClick={handleRetry}
             variant="outline"
@@ -385,16 +409,24 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       <div className="flex items-center space-x-4 p-4 bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm rounded-lg">
         {/* Camera Selector */}
         <div className="flex-1">
-          <Select value={selectedDeviceId} onValueChange={handleCameraChange} disabled={cameraDevices.length === 0}>
+          <Select 
+            value={selectedDeviceId || "default"} 
+            onValueChange={handleCameraChange} 
+            disabled={cameraDevices.length === 0}
+          >
             <SelectTrigger className="bg-white/70 dark:bg-slate-700/70">
               <SelectValue placeholder="Select camera" />
             </SelectTrigger>
             <SelectContent>
-              {cameraDevices.map((device, index) => (
-                <SelectItem key={device.deviceId} value={device.deviceId}>
-                  {device.label || `Camera ${index + 1}`}
-                </SelectItem>
-              ))}
+              {cameraDevices.length > 0 ? (
+                cameraDevices.map((device, index) => (
+                  <SelectItem key={device.deviceId} value={device.deviceId}>
+                    {device.label || `Camera ${index + 1}`}
+                  </SelectItem>
+                ))
+              ) : (
+                <SelectItem value="default">No cameras available</SelectItem>
+              )}
             </SelectContent>
           </Select>
         </div>
