@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef, useEffect, useState, useCallback } from "react"
-import { Camera, CameraIcon as Capture, AlertCircle, RotateCcw, Loader2 } from "lucide-react"
+import { Camera, CameraIcon as Capture, AlertCircle, RotateCcw, Loader2, RefreshCw } from "lucide-react"
 import { Button } from "./ui/button"
 import { Card } from "./ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
@@ -25,6 +25,7 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
   const [countdown, setCountdown] = useState<number | null>(null)
   const [isRetrying, setIsRetrying] = useState(false)
   const [hasPermission, setHasPermission] = useState<boolean | null>(null)
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   // Request camera permission and get available cameras
   const requestCameraPermission = async () => {
@@ -39,7 +40,9 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
 
       if (devices.length > 0) {
         // Select the first camera by default
-        setSelectedDeviceId(devices[0].deviceId)
+        // Ensure we have a valid deviceId
+        const validDeviceId = devices[0].deviceId || "default"
+        setSelectedDeviceId(validDeviceId)
         setHasPermission(true)
         return devices
       } else {
@@ -59,6 +62,40 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       return []
     } finally {
       setIsRetrying(false)
+    }
+  }
+
+  // Refresh camera devices list (useful for detecting newly connected cameras)
+  const refreshCameraDevices = async () => {
+    try {
+      setIsRefreshing(true)
+      setError(null)
+      console.log("Refreshing camera devices list...")
+      
+      // Use the new refreshCameraDevices method
+      const devices = await cameraService.refreshCameraDevices()
+      console.log(`After refresh: Found ${devices.length} camera devices:`, devices.map(d => d.label))
+      setCameraDevices(devices)
+      
+      if (devices.length > 0) {
+        // Keep current camera if it still exists in the list
+        const currentDeviceExists = devices.some(device => device.deviceId === selectedDeviceId)
+        if (!currentDeviceExists) {
+          // Switch to the first camera if current one is no longer available
+          const validDeviceId = devices[0].deviceId || "default"
+          setSelectedDeviceId(validDeviceId)
+          await startCamera(validDeviceId)
+        }
+        setHasPermission(true)
+      } else {
+        setError("No camera devices found after refresh. Please connect a camera and try again.")
+      }
+    } catch (err) {
+      console.error("Camera refresh error:", err)
+      const errorMsg = err instanceof Error ? err.message : "Failed to refresh camera list"
+      setError(`Camera refresh error: ${errorMsg}`)
+    } finally {
+      setIsRefreshing(false)
     }
   }
 
@@ -163,7 +200,7 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
     }
   }, [stopCameraStream])
 
-  // Initialize camera on mount
+  // Initialize camera on mount and set up device change listener
   useEffect(() => {
     const initCamera = async () => {
       const devices = await requestCameraPermission()
@@ -177,11 +214,21 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
 
     initCamera()
 
+    // Set up device change listener to detect when cameras are connected/disconnected
+    const handleDeviceChange = async () => {
+      console.log("Device change detected - a camera may have been connected or disconnected");
+      await refreshCameraDevices();
+    };
+
+    // Add event listener for device changes
+    navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+
     // Cleanup on unmount
     return () => {
       stopCameraStream()
+      navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
     }
-  }, [startCamera, stopCameraStream])
+  }, [startCamera, stopCameraStream, refreshCameraDevices])
 
   // Handle camera device change
   const handleCameraChange = async (deviceId: string) => {
@@ -408,27 +455,45 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       {/* Camera Controls */}
       <div className="flex items-center space-x-4 p-4 bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm rounded-lg">
         {/* Camera Selector */}
-        <div className="flex-1">
-          <Select 
-            value={selectedDeviceId || "default"} 
-            onValueChange={handleCameraChange} 
-            disabled={cameraDevices.length === 0}
+        <div className="flex-1 flex items-center space-x-2">
+          <div className="flex-1">
+            <Select 
+              value={selectedDeviceId || "default"} 
+              onValueChange={handleCameraChange} 
+              disabled={cameraDevices.length === 0 || isRefreshing}
+            >
+              <SelectTrigger className="bg-white/70 dark:bg-slate-700/70">
+                <SelectValue placeholder="Select camera" />
+              </SelectTrigger>
+              <SelectContent>
+                {cameraDevices.length > 0 ? (
+                  cameraDevices.map((device, index) => (
+                    <SelectItem key={device.deviceId} value={device.deviceId}>
+                      {device.label || `Camera ${index + 1}`}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value="default">No cameras available</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+          
+          {/* Refresh Button */}
+          <Button 
+            onClick={refreshCameraDevices} 
+            variant="outline" 
+            size="icon" 
+            className="flex-shrink-0"
+            disabled={isRefreshing}
+            title="Refresh camera list to detect external cameras"
           >
-            <SelectTrigger className="bg-white/70 dark:bg-slate-700/70">
-              <SelectValue placeholder="Select camera" />
-            </SelectTrigger>
-            <SelectContent>
-              {cameraDevices.length > 0 ? (
-                cameraDevices.map((device, index) => (
-                  <SelectItem key={device.deviceId} value={device.deviceId}>
-                    {device.label || `Camera ${index + 1}`}
-                  </SelectItem>
-                ))
-              ) : (
-                <SelectItem value="default">No cameras available</SelectItem>
-              )}
-            </SelectContent>
-          </Select>
+            {isRefreshing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+          </Button>
         </div>
 
         {/* Manual Capture Button */}
@@ -440,6 +505,24 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
           <Capture className="h-4 w-4 mr-2" />
           Capture Now
         </Button>
+      </div>
+      
+      {/* Camera Status and Help */}
+      <div className="text-xs text-slate-600 dark:text-slate-400 px-1 mt-2">
+        {cameraDevices.length > 1 ? (
+          <p>
+            <span className="font-medium text-green-600 dark:text-green-400">✓</span> {cameraDevices.length} cameras detected. 
+            Use the dropdown to switch between them.
+          </p>
+        ) : cameraDevices.length === 1 ? (
+          <p>
+            Only one camera detected. If you have an external camera, connect it and click the refresh button.
+          </p>
+        ) : (
+          <p>
+            No cameras detected. Connect a camera and click the refresh button.
+          </p>
+        )}
       </div>
     </div>
   )

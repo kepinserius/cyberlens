@@ -545,9 +545,31 @@ export const cameraService = {
       // Check browser support
       const browserSupport = this.checkBrowserSupport();
       
+      // Force device refresh by requesting permission first
+      try {
+        console.log("CameraService: Requesting camera permission to refresh device list");
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        // Stop the stream immediately after getting permission
+        stream.getTracks().forEach(track => track.stop());
+        console.log("CameraService: Successfully got camera permission for device refresh");
+      } catch (error) {
+        console.warn('CameraService: Could not get camera permission for device refresh:', error);
+      }
+      
+      // Wait a moment for devices to be recognized
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Get all media devices after permission is granted
+      console.log("CameraService: Enumerating all media devices after permission");
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(device => device.kind === 'videoinput');
+      
+      console.log(`CameraService: Found ${videoDevices.length} raw camera devices:`, 
+        videoDevices.map(d => ({ id: d.deviceId, label: d.label })));
+      
       // On Linux, try a different approach first
-      if (browserSupport.isLinux) {
-        console.log("CameraService: Linux system detected, using specialized camera detection");
+      if (browserSupport.isLinux && videoDevices.length === 0) {
+        console.log("CameraService: Linux system detected with no cameras, using specialized camera detection");
         
         // Create a fake camera device for Linux systems
         const fakeCamera = {
@@ -558,62 +580,10 @@ export const cameraService = {
           toJSON: () => { return {} }
         };
         
-        // Try to verify if camera is actually accessible
-        try {
-          console.log("CameraService: Testing camera access on Linux");
-          const testStream = await navigator.mediaDevices.getUserMedia({ 
-            video: true, // Use simplest constraint for Linux
-            audio: false
-          });
-          
-          // If we get here, camera is accessible
-          console.log("CameraService: Camera is accessible on Linux");
-          
-          // Immediately stop the test stream
-          testStream.getTracks().forEach(track => track.stop());
-          
-          return [fakeCamera];
-        } catch (err) {
-          console.warn("CameraService: Camera test access failed on Linux:", err);
-          // Still return the fake camera - we'll handle errors during actual camera initialization
-          return [fakeCamera];
-        }
+        return [fakeCamera];
       }
       
-      // Standard flow for non-Linux systems
-      // Coba untuk mendapatkan izin kamera terlebih dahulu dengan timeout
-      try {
-        console.log("CameraService: Requesting camera permission for enumeration");
-        
-        // Try with minimal constraints first
-        const permissionPromise = navigator.mediaDevices.getUserMedia({ 
-          video: {
-            width: { ideal: 320 },
-            height: { ideal: 240 }
-          },
-          audio: false
-        });
-        
-        const timeoutPromise = new Promise<MediaStream>((_, reject) => {
-          setTimeout(() => reject(new Error('Permission request timed out')), 5000);
-        });
-        
-        const stream = await Promise.race([permissionPromise, timeoutPromise]);
-        
-        // Immediately stop the stream after getting permission
-        stream.getTracks().forEach(track => track.stop());
-        console.log("CameraService: Successfully got camera permission for enumeration");
-      } catch (error) {
-        console.warn('CameraService: Could not get camera permission for device enumeration:', error);
-        // Continue anyway - we might still get device info
-      }
-      
-      // Dapatkan daftar perangkat
-      console.log("CameraService: Enumerating media devices");
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = devices.filter(device => device.kind === 'videoinput');
-      
-      // Jika tidak ada label kamera, tambahkan label default
+      // Add labels to devices without labels
       const labeledDevices = videoDevices.map((device, index) => {
         if (!device.label) {
           // Clone the device and add a label
@@ -628,11 +598,11 @@ export const cameraService = {
         return device;
       });
       
-      // Log temuan perangkat kamera untuk debugging
-      console.log(`CameraService: Found ${labeledDevices.length} camera devices:`, 
+      // Log found camera devices for debugging
+      console.log(`CameraService: Found ${labeledDevices.length} labeled camera devices:`, 
         labeledDevices.map(d => d.label));
       
-      // Special handling for systems with no detected cameras
+      // If no cameras detected, add a default camera
       if (labeledDevices.length === 0) {
         console.log("CameraService: No cameras detected - adding a default camera");
         
@@ -662,6 +632,29 @@ export const cameraService = {
       };
       
       return [fakeCamera];
+    }
+  },
+  
+  /**
+   * Force refresh of available camera devices
+   * Useful when connecting/disconnecting external cameras
+   */
+  async refreshCameraDevices(): Promise<MediaDeviceInfo[]> {
+    console.log("CameraService: Forcing camera device refresh");
+    
+    try {
+      // First request permission to trigger device detection
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      stream.getTracks().forEach(track => track.stop());
+      
+      // Wait a moment for devices to be recognized
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Then enumerate devices
+      return this.getAvailableCameras();
+    } catch (error) {
+      console.error("CameraService: Error refreshing camera devices:", error);
+      return this.getAvailableCameras(); // Fall back to normal detection
     }
   },
   
