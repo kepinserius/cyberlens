@@ -66,14 +66,6 @@ export const cameraService = {
       if (browserSupport.isLinux) {
         console.log("CameraService: Linux system detected, using specialized camera initialization");
         
-        // Default options - use lower resolution for Linux compatibility
-        const cameraOptions: CameraOptions = {
-          width: options.width || 320, // Lower resolution for Linux
-          height: options.height || 240, // Lower resolution for Linux
-          frameRate: options.frameRate || 15,
-          facingMode: options.facingMode || 'environment'
-        };
-        
         // Make sure to release any existing camera resources
         this.stopCamera();
         
@@ -129,7 +121,7 @@ export const cameraService = {
       }
       
       // Default options - optimized for lower resolution to prevent resource allocation issues
-      const cameraOptions: CameraOptions = {
+      const defaultOptions: CameraOptions = {
         width: options.width || 640, // Reduced from 1280 to 640 for better compatibility
         height: options.height || 480, // Reduced from 720 to 480 for better compatibility
         frameRate: options.frameRate || 15, // Reduced from 30 to 15 for better compatibility
@@ -152,7 +144,7 @@ export const cameraService = {
       // Request camera access with proper error handling and timeout
       let stream;
       try {
-        console.log("CameraService: Requesting user media with constraints:", cameraOptions);
+        console.log("CameraService: Requesting user media with constraints:", defaultOptions);
         
         // First try to enumerate devices to check if cameras exist
         const devices = await this.getAvailableCameras();
@@ -190,15 +182,15 @@ export const cameraService = {
           
           // If minimal resolution fails, try with user-specified resolution
           // Try with specific device ID if available
-          if (devices.length > 0 && !cameraOptions.facingMode) {
+          if (devices.length > 0 && !defaultOptions.facingMode) {
             console.log(`CameraService: Trying first available camera: ${devices[0].label}`);
             
             const streamPromise = navigator.mediaDevices.getUserMedia({
               video: {
                 deviceId: { exact: devices[0].deviceId },
-                width: { ideal: cameraOptions.width || 640 },
-                height: { ideal: cameraOptions.height || 480 },
-                frameRate: { ideal: cameraOptions.frameRate || 15 }
+                width: { ideal: defaultOptions.width || 640 },
+                height: { ideal: defaultOptions.height || 480 },
+                frameRate: { ideal: defaultOptions.frameRate || 15 }
               } as MediaTrackConstraints,
               audio: false
             });
@@ -208,7 +200,7 @@ export const cameraService = {
           } else {
             // Try with facingMode constraint
             const streamPromise = navigator.mediaDevices.getUserMedia({
-              video: cameraOptions as MediaTrackConstraints,
+              video: defaultOptions as MediaTrackConstraints,
               audio: false
             });
             
@@ -244,7 +236,7 @@ export const cameraService = {
             });
             console.log("CameraService: Basic video constraint successful");
           }
-        } else if (cameraOptions.facingMode === 'environment') {
+        } else if (defaultOptions.facingMode === 'environment') {
           // Try fallback to front camera if back camera fails
           try {
             console.log("CameraService: Trying fallback to front camera");

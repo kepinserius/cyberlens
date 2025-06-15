@@ -65,40 +65,6 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
     }
   }
 
-  // Refresh camera devices list (useful for detecting newly connected cameras)
-  const refreshCameraDevices = async () => {
-    try {
-      setIsRefreshing(true)
-      setError(null)
-      console.log("Refreshing camera devices list...")
-      
-      // Use the new refreshCameraDevices method
-      const devices = await cameraService.refreshCameraDevices()
-      console.log(`After refresh: Found ${devices.length} camera devices:`, devices.map(d => d.label))
-      setCameraDevices(devices)
-      
-      if (devices.length > 0) {
-        // Keep current camera if it still exists in the list
-        const currentDeviceExists = devices.some(device => device.deviceId === selectedDeviceId)
-        if (!currentDeviceExists) {
-          // Switch to the first camera if current one is no longer available
-          const validDeviceId = devices[0].deviceId || "default"
-          setSelectedDeviceId(validDeviceId)
-          await startCamera(validDeviceId)
-        }
-        setHasPermission(true)
-      } else {
-        setError("No camera devices found after refresh. Please connect a camera and try again.")
-      }
-    } catch (err) {
-      console.error("Camera refresh error:", err)
-      const errorMsg = err instanceof Error ? err.message : "Failed to refresh camera list"
-      setError(`Camera refresh error: ${errorMsg}`)
-    } finally {
-      setIsRefreshing(false)
-    }
-  }
-
   // Stop camera stream
   const stopCameraStream = useCallback(() => {
     // Use cameraService to stop the camera properly
@@ -128,7 +94,7 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       stopCameraStream()
 
       // Use cameraService to initialize the camera
-      const video = await cameraService.initCamera({
+      await cameraService.initCamera({
         width: 1280,
         height: 720,
         frameRate: 30,
@@ -199,6 +165,40 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       setIsRetrying(false)
     }
   }, [stopCameraStream])
+
+  // Refresh camera devices list (useful for detecting newly connected cameras)
+  const refreshCameraDevices = useCallback(async () => {
+    try {
+      setIsRefreshing(true)
+      setError(null)
+      console.log("Refreshing camera devices list...")
+      
+      // Use the new refreshCameraDevices method
+      const devices = await cameraService.refreshCameraDevices()
+      console.log(`After refresh: Found ${devices.length} camera devices:`, devices.map(d => d.label))
+      setCameraDevices(devices)
+      
+      if (devices.length > 0) {
+        // Keep current camera if it still exists in the list
+        const currentDeviceExists = devices.some(device => device.deviceId === selectedDeviceId)
+        if (!currentDeviceExists) {
+          // Switch to the first camera if current one is no longer available
+          const validDeviceId = devices[0].deviceId || "default"
+          setSelectedDeviceId(validDeviceId)
+          await startCamera(validDeviceId)
+        }
+        setHasPermission(true)
+      } else {
+        setError("No camera devices found after refresh. Please connect a camera and try again.")
+      }
+    } catch (err) {
+      console.error("Camera refresh error:", err)
+      const errorMsg = err instanceof Error ? err.message : "Failed to refresh camera list"
+      setError(`Camera refresh error: ${errorMsg}`)
+    } finally {
+      setIsRefreshing(false)
+    }
+  }, [selectedDeviceId, startCamera]);
 
   // Initialize camera on mount and set up device change listener
   useEffect(() => {
