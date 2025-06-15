@@ -661,6 +661,9 @@ export const cameraService = {
       // Close existing stream
       this.stopCamera();
       
+      // Add a small delay to ensure clean switch
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
       // Handle special case for default camera
       if (deviceId === "default-camera") {
         console.log("CameraService: Using default camera handling for Linux");
@@ -780,7 +783,21 @@ export const cameraService = {
       }
       
       // Normal camera switching for standard devices
+      console.log(`CameraService: Switching to specific camera device: ${deviceId}`);
+      
+      // First verify that the device exists
+      const devices = await this.getAvailableCameras();
+      const deviceExists = devices.some(device => device.deviceId === deviceId);
+      
+      if (!deviceExists) {
+        console.error(`CameraService: Device with ID ${deviceId} not found`);
+        throw new Error(`Camera device not found: ${deviceId}`);
+      }
+      
       // Request access to the specific camera with timeout
+      console.log(`CameraService: Requesting access to device: ${deviceId}`);
+      
+      // Use exact constraint to ensure we get the specific camera
       const streamPromise = navigator.mediaDevices.getUserMedia({
         video: { 
           deviceId: { exact: deviceId },
@@ -796,6 +813,7 @@ export const cameraService = {
       });
       
       const stream = await Promise.race([streamPromise, timeoutPromise]);
+      console.log(`CameraService: Successfully obtained stream for device: ${deviceId}`);
       
       // Create and configure video element
       const video = document.createElement('video');
@@ -814,12 +832,15 @@ export const cameraService = {
         video.onloadedmetadata = () => {
             clearTimeout(loadTimeout);
             video.play()
-              .then(() => resolve())
+              .then(() => {
+                console.log(`CameraService: Video playing for device: ${deviceId}`);
+                resolve();
+              })
               .catch(e => {
-            console.error('Error playing video:', e);
+                console.error('Error playing video:', e);
                 reject(e);
-          });
-        };
+              });
+          };
         }),
         new Promise<void>((_, reject) => 
           setTimeout(() => reject(new Error('Overall timeout switching camera')), 15000)
@@ -835,5 +856,40 @@ export const cameraService = {
       console.error('Camera switch error:', error);
       throw new Error('Failed to switch camera');
     }
+  },
+  
+  /**
+   * Check if a device is likely an external camera based on its label
+   * @param device The media device info
+   */
+  isExternalCamera(device: MediaDeviceInfo): boolean {
+    if (!device.label) return false;
+    
+    const label = device.label.toLowerCase();
+    // Common external camera keywords
+    const externalKeywords = [
+      'usb', 'external', 'webcam', 'web cam', 'hd camera', 
+      'logitech', 'microsoft', 'razer', 'avermedia', 'elgato',
+      'cam link', 'capture'
+    ];
+    
+    return externalKeywords.some(keyword => label.includes(keyword));
+  },
+  
+  /**
+   * Get available cameras with external cameras prioritized
+   */
+  async getAvailableCamerasWithPriority(): Promise<MediaDeviceInfo[]> {
+    const devices = await this.getAvailableCameras();
+    
+    // Sort devices to prioritize external cameras
+    return devices.sort((a, b) => {
+      const aIsExternal = this.isExternalCamera(a);
+      const bIsExternal = this.isExternalCamera(b);
+      
+      if (aIsExternal && !bIsExternal) return -1;
+      if (!aIsExternal && bIsExternal) return 1;
+      return 0;
+    });
   }
 }; 

@@ -33,8 +33,8 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       setIsRetrying(true)
       console.log("Requesting camera permission...")
       
-      // Get available cameras using the cameraService
-      const devices = await cameraService.getAvailableCameras()
+      // Get available cameras using the cameraService with priority for external cameras
+      const devices = await cameraService.getAvailableCamerasWithPriority()
       console.log(`Found ${devices.length} camera devices:`, devices.map(d => d.label))
       setCameraDevices(devices)
 
@@ -166,6 +166,58 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
     }
   }, [stopCameraStream])
 
+  // Handle camera device change
+  const handleCameraChange = useCallback(async (deviceId: string) => {
+    if (!deviceId) {
+      console.error("Empty deviceId provided to handleCameraChange");
+      return;
+    }
+    
+    try {
+      console.log(`Switching to camera with ID: ${deviceId}`);
+      setError(null);
+      setIsRetrying(true);
+      
+      // Stop current camera first
+      stopCameraStream();
+      
+      // Update selected device ID
+      setSelectedDeviceId(deviceId);
+      
+      // Force a small delay to ensure clean switch
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Directly use switchCamera from cameraService instead of startCamera
+      const video = await cameraService.switchCamera(deviceId);
+      
+      // Update video reference
+      if (videoRef.current) {
+        videoRef.current.srcObject = video.srcObject;
+        
+        try {
+          await videoRef.current.play();
+          console.log("Video playing after camera switch");
+        } catch (err) {
+          console.error("Error playing video after camera switch:", err);
+        }
+      }
+      
+      // Update stream reference and status
+      streamRef.current = cameraService.videoStream;
+      setIsCameraActive(true);
+      console.log(`Successfully switched to camera: ${deviceId}`);
+    } catch (err) {
+      console.error("Error switching camera:", err);
+      const errorMsg = err instanceof Error ? err.message : "Unknown error";
+      setError(`Failed to switch camera: ${errorMsg}`);
+      
+      // Try to recover by restarting with default camera
+      await startCamera();
+    } finally {
+      setIsRetrying(false);
+    }
+  }, [stopCameraStream, startCamera]);
+
   // Refresh camera devices list (useful for detecting newly connected cameras)
   const refreshCameraDevices = useCallback(async () => {
     try {
@@ -173,12 +225,50 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       setError(null)
       console.log("Refreshing camera devices list...")
       
-      // Use the new refreshCameraDevices method
-      const devices = await cameraService.refreshCameraDevices()
+      // Use the new refreshCameraDevices method with priority for external cameras
+      await cameraService.refreshCameraDevices()
+      const devices = await cameraService.getAvailableCamerasWithPriority()
       console.log(`After refresh: Found ${devices.length} camera devices:`, devices.map(d => d.label))
       setCameraDevices(devices)
       
       if (devices.length > 0) {
+        // Find external camera if available
+        const externalCamera = devices.find(device => cameraService.isExternalCamera(device));
+        
+        // Check if we should switch to an external camera
+        if (externalCamera && !devices.find(d => d.deviceId === selectedDeviceId && cameraService.isExternalCamera(d))) {
+          console.log("External camera detected, switching to it automatically");
+          const validDeviceId = externalCamera.deviceId;
+          setSelectedDeviceId(validDeviceId);
+          
+          // Use cameraService.switchCamera directly instead of handleCameraChange
+          try {
+            // Stop current camera first
+            stopCameraStream();
+            
+            // Force a small delay to ensure clean switch
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            // Switch camera
+            const video = await cameraService.switchCamera(validDeviceId);
+            
+            // Update video reference
+            if (videoRef.current) {
+              videoRef.current.srcObject = video.srcObject;
+              await videoRef.current.play();
+            }
+            
+            // Update stream reference and status
+            streamRef.current = cameraService.videoStream;
+            setIsCameraActive(true);
+            console.log(`Successfully switched to external camera: ${validDeviceId}`);
+          } catch (err) {
+            console.error("Error switching to external camera:", err);
+            await startCamera(); // Fallback to default camera
+          }
+          return;
+        }
+        
         // Keep current camera if it still exists in the list
         const currentDeviceExists = devices.some(device => device.deviceId === selectedDeviceId)
         if (!currentDeviceExists) {
@@ -198,16 +288,21 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
     } finally {
       setIsRefreshing(false)
     }
-  }, [selectedDeviceId, startCamera]);
+  }, [selectedDeviceId, startCamera, stopCameraStream]);
 
   // Initialize camera on mount and set up device change listener
   useEffect(() => {
     const initCamera = async () => {
       const devices = await requestCameraPermission()
       if (devices.length > 0) {
-        // Ensure we have a valid deviceId
-        const validDeviceId = devices[0].deviceId || "default"
+        // Find external camera if available
+        const externalCamera = devices.find(device => cameraService.isExternalCamera(device));
+        
+        // Ensure we have a valid deviceId - prioritize external camera if available
+        const validDeviceId = externalCamera?.deviceId || devices[0].deviceId || "default";
+        
         setSelectedDeviceId(validDeviceId)
+        console.log(`Initial camera setup with device ID: ${validDeviceId}${externalCamera ? ' (external camera)' : ''}`);
         await startCamera(validDeviceId)
       }
     }
@@ -229,16 +324,6 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
     }
   }, [startCamera, stopCameraStream, refreshCameraDevices])
-
-  // Handle camera device change
-  const handleCameraChange = async (deviceId: string) => {
-    if (!deviceId) {
-      console.error("Empty deviceId provided to handleCameraChange");
-      return;
-    }
-    setSelectedDeviceId(deviceId)
-    await startCamera(deviceId)
-  }
 
   // Handle retry
   const handleRetry = async () => {
@@ -469,7 +554,14 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
                 {cameraDevices.length > 0 ? (
                   cameraDevices.map((device, index) => (
                     <SelectItem key={device.deviceId} value={device.deviceId}>
-                      {device.label || `Camera ${index + 1}`}
+                      {cameraService.isExternalCamera(device) ? (
+                        <span className="flex items-center">
+                          <span className="inline-block w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+                          {device.label || `External Camera ${index + 1}`}
+                        </span>
+                      ) : (
+                        <span>{device.label || `Camera ${index + 1}`}</span>
+                      )}
                     </SelectItem>
                   ))
                 ) : (
