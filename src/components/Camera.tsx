@@ -280,7 +280,7 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
     } finally {
       setIsRetrying(false);
     }
-  }, [stopCameraStream, startCamera, isMirrored]);
+  }, [stopCameraStream, startCamera]);
 
   // Refresh camera devices list (useful for detecting newly connected cameras)
   const refreshCameraDevices = useCallback(async () => {
@@ -470,6 +470,20 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       clearInterval(captureInterval)
     }
   }, [isScanning, isCameraActive, onCapture, startCamera, selectedDeviceId, isMirrored])
+
+  // Retry camera connection
+  const retryCamera = useCallback(async () => {
+    try {
+      setIsRetrying(true);
+      await stopCameraStream();
+      await startCamera(selectedDeviceId);
+    } catch (error) {
+      console.error("Error retrying camera connection:", error);
+      setError("Failed to reconnect to camera. Please try again.");
+    } finally {
+      setIsRetrying(false);
+    }
+  }, [stopCameraStream, startCamera]);
 
   // Error state
   if (hasPermission === false) {
