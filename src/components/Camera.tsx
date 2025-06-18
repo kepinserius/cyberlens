@@ -55,19 +55,6 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
     } else {
       console.log("Camera component: Loaded saved mirror mode: disabled");
     }
-    
-    // Listen for mirror mode changes from cameraService
-    const handleMirrorChange = () => {
-      console.log("Camera component: Detected mirror mode change event");
-      // Force re-render to apply mirror effect
-      setIsMirrored(cameraService.getMirrorMode());
-    };
-    
-    window.addEventListener('camera-mirror-changed', handleMirrorChange);
-    
-    return () => {
-      window.removeEventListener('camera-mirror-changed', handleMirrorChange);
-    };
   }, []);
 
   // Request camera permission and get available cameras
@@ -226,6 +213,11 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       const currentMirrorMode = isMirrored;
       console.log(`Current mirror mode before camera switch: ${currentMirrorMode}`);
       
+      // Matikan mirror mode sementara untuk menghindari masalah selama switch
+      if (currentMirrorMode) {
+        cameraService.setMirrorMode(false);
+      }
+      
       // Completely stop current camera and stream first
       stopCameraStream();
       
@@ -253,10 +245,6 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       // Directly use switchCamera from cameraService instead of startCamera
       const video = await cameraService.switchCamera(deviceId);
       
-      // Re-apply mirror mode setelah switch kamera
-      cameraService.setMirrorMode(currentMirrorMode);
-      console.log(`Re-applied mirror mode after camera switch: ${currentMirrorMode}`);
-      
       // Update video reference
       if (videoRef.current) {
         // Make sure old srcObject is cleared
@@ -273,12 +261,17 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
         // Set new srcObject
         videoRef.current.srcObject = video.srcObject;
         
-        // Re-apply mirror mode pada element video
-        videoRef.current.style.transform = currentMirrorMode ? 'scaleX(-1)' : 'scaleX(1)';
-        
         try {
           await videoRef.current.play();
           console.log("Video playing after camera switch");
+          
+          // Re-apply mirror mode setelah kamera berhasil dimulai
+          setTimeout(() => {
+            if (currentMirrorMode) {
+              cameraService.setMirrorMode(currentMirrorMode);
+              console.log(`Re-applied mirror mode after camera switch: ${currentMirrorMode}`);
+            }
+          }, 500);
         } catch (err) {
           console.error("Error playing video after camera switch:", err);
         }
@@ -713,38 +706,44 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
               }}
               onLoadedMetadata={() => {
                 console.log("Video element onLoadedMetadata event fired");
-                // Tambahkan/hapus class untuk mirror mode
+                
+                // Simpel: Terapkan class CSS sesuai mirror mode
                 if (videoRef.current) {
-                  if (isMirrored) {
-                    videoRef.current.classList.add('video-mirrored');
-                    videoRef.current.classList.remove('video-normal');
-                  } else {
-                    videoRef.current.classList.add('video-normal');
-                    videoRef.current.classList.remove('video-mirrored');
-                  }
+                  cameraService.applyBasicMirrorEffect(videoRef.current, isMirrored);
                 }
               }}
               onPlaying={() => {
                 console.log("Video element onPlaying event fired");
-                // Tambahkan/hapus class untuk mirror mode
+                
+                // Simpel: Terapkan class CSS sesuai mirror mode
                 if (videoRef.current) {
-                  if (isMirrored) {
-                    videoRef.current.classList.add('video-mirrored');
-                    videoRef.current.classList.remove('video-normal');
-                  } else {
-                    videoRef.current.classList.add('video-normal');
-                    videoRef.current.classList.remove('video-mirrored');
-                  }
+                  cameraService.applyBasicMirrorEffect(videoRef.current, isMirrored);
                 }
               }}
               onError={(e) => console.error("Video element error event:", e)}
             />
             
-            {/* Indikator Mirror Mode */}
+            {/* Mirror Mode Status */}
             {isMirrored && (
-              <div className="absolute bottom-2 right-2 bg-blue-500/70 px-2 py-1 rounded-md text-xs text-white font-medium">
+              <div className="absolute bottom-2 right-2 bg-blue-500/70 text-white px-2 py-1 rounded-md text-xs font-medium">
                 Mirror Mode
               </div>
+            )}
+            
+            {/* Fallback untuk masalah mirror */}
+            {isMirrored && (
+              <button
+                onClick={() => {
+                  // Reset mirror mode jika bermasalah
+                  setIsMirrored(false);
+                  localStorage.setItem('camera_mirror_mode', 'false');
+                  cameraService.setMirrorMode(false);
+                  console.log("RESET: Disabled mirror mode due to potential issues");
+                }}
+                className="absolute top-2 right-2 bg-red-500/70 text-white px-2 py-1 rounded-md text-xs font-medium hover:bg-red-600/70"
+              >
+                Reset Mirror
+              </button>
             )}
           </div>
         )}

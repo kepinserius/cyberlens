@@ -626,18 +626,28 @@ export const cameraService = {
     }
   },
   
+  // Metode simpel untuk mirror mode
+  applyBasicMirrorEffect(video: HTMLVideoElement, mirrored: boolean): void {
+    try {
+      if (mirrored) {
+        video.classList.add('video-mirrored');
+        video.classList.remove('video-normal');
+        console.log("Applied basic mirror mode to video element");
+      } else {
+        video.classList.add('video-normal');
+        video.classList.remove('video-mirrored');
+        console.log("Removed mirror mode from video element");
+      }
+    } catch (e) {
+      console.error("Error applying mirror effect:", e);
+    }
+  },
+  
   /**
    * Capture a frame from the video stream as a base64 encoded JPEG
    * @param mirrored Whether to mirror the captured image
    */
   captureFrame(mirrored?: boolean): string {
-    // Throttle frame capture untuk menghindari overhead pada perangkat dengan performa rendah
-    const now = Date.now();
-    if (now - this.lastFrameTime < this.minFrameInterval) {
-      console.debug('Frame capture throttled');
-    }
-    this.lastFrameTime = now;
-    
     if (!this.videoElement) {
       throw new Error('Camera not initialized. Call initCamera() first.');
     }
@@ -648,11 +658,8 @@ export const cameraService = {
     }
     
     try {
-      // IMPLEMENTASI SEDERHANA: Gunakan 1 canvas dengan gambar normal
-      
-      // Determine if we should mirror
-      const shouldMirror = mirrored !== undefined ? mirrored : this.isMirrored;
-      console.log(`CameraService: Capturing frame with mirror mode: ${shouldMirror}`);
+      // IMPLEMENTASI SUPER SIMPEL: Tangkap gambar apa adanya terlebih dahulu
+      console.log("CameraService: Capturing frame in simplest way possible");
       
       // Create a canvas with the same dimensions as the video
       const canvas = document.createElement('canvas');
@@ -665,49 +672,40 @@ export const cameraService = {
         throw new Error('Failed to get canvas context');
       }
       
-      // For mirrored capture, flip the canvas horizontally
+      // Determine if we should mirror
+      const shouldMirror = mirrored !== undefined ? mirrored : this.isMirrored;
+      
+      // Simply draw the video to canvas - simplest approach
+      context.drawImage(this.videoElement, 0, 0, canvas.width, canvas.height);
+      
+      // If mirror is needed, we'll handle it with a second step for reliability
       if (shouldMirror) {
-        // Save the current state
-        context.save();
+        // Create a separate canvas for the mirrored version
+        const mirrorCanvas = document.createElement('canvas');
+        mirrorCanvas.width = canvas.width;
+        mirrorCanvas.height = canvas.height;
         
-        // Flip the context horizontally
-        context.translate(canvas.width, 0);
-        context.scale(-1, 1);
-        
-        // Draw the video frame on the flipped context
-        context.drawImage(this.videoElement, 0, 0, canvas.width, canvas.height);
-        
-        // Restore the context to its original state
-        context.restore();
-        
-        console.log("CameraService: Applied mirror effect to canvas for capture");
-      } else {
-        // Regular capture without mirroring
-        context.drawImage(this.videoElement, 0, 0, canvas.width, canvas.height);
-      }
-      
-      // Validate image data
-      try {
-        const testData = context.getImageData(0, 0, 1, 1);
-        if (!testData || !testData.data || testData.data.length === 0) {
-          throw new Error('Canvas contains no image data');
+        const mirrorContext = mirrorCanvas.getContext('2d');
+        if (!mirrorContext) {
+          console.warn("Could not create mirror context, returning non-mirrored image");
+          const imageData = canvas.toDataURL('image/jpeg', 0.85);
+          return imageData;
         }
-      } catch (pixelError) {
-        console.error('Error accessing pixel data:', pixelError);
-        throw new Error('Failed to capture valid image data from camera');
+        
+        // Draw flipped
+        mirrorContext.translate(canvas.width, 0);
+        mirrorContext.scale(-1, 1);
+        mirrorContext.drawImage(canvas, 0, 0);
+        
+        // Get the mirrored image
+        const imageData = mirrorCanvas.toDataURL('image/jpeg', 0.85);
+        console.log(`CameraService: Captured mirrored image: ${imageData.substring(0, 50)}...`);
+        return imageData;
       }
       
-      // Get base64 encoded JPEG
-      const imageData = canvas.toDataURL('image/jpeg', 0.8);
-      
-      // Log some data to verify the image
-      console.log(`CameraService: Captured image size: ${imageData.length} bytes`);
-      
-      // Verify that we got valid image data
-      if (!imageData || !imageData.startsWith('data:image/jpeg')) {
-        throw new Error('Invalid image data format');
-      }
-      
+      // Regular image
+      const imageData = canvas.toDataURL('image/jpeg', 0.85);
+      console.log(`CameraService: Captured normal image: ${imageData.substring(0, 50)}...`);
       return imageData;
     } catch (error) {
       console.error('Frame capture error:', error);
@@ -721,30 +719,13 @@ export const cameraService = {
    */
   setMirrorMode(mirrored: boolean): void {
     // Catat perubahan mode mirror
-    const previousMode = this.isMirrored;
     this.isMirrored = mirrored;
     
     console.log(`CameraService: Mirror mode ${mirrored ? 'enabled' : 'disabled'}`);
     
-    // Jika video element tersedia, kita perlu melakukan refresh
-    if (this.videoElement && previousMode !== mirrored) {
-      try {
-        // Kita tidak manipulasi DOM di sini, tapi kita perlu memastikan bahwa
-        // mirror mode berubah akan diaplikasikan dengan benar pada frame berikutnya
-        
-        // Lakukan refresh pada video element untuk memastikan perubahan terlihat
-        const currentTime = this.videoElement.currentTime;
-        
-        // Log untuk debugging
-        console.log(`CameraService: Mirror mode changed from ${previousMode} to ${mirrored}, refreshing view`);
-        
-        // Trigger refresh event jika ada
-        if (typeof window.dispatchEvent === 'function') {
-          window.dispatchEvent(new Event('camera-mirror-changed'));
-        }
-      } catch (e) {
-        console.error('Error refreshing video after mirror mode change:', e);
-      }
+    // Jika video element tersedia, terapkan langsung
+    if (this.videoElement) {
+      this.applyBasicMirrorEffect(this.videoElement, mirrored);
     }
   },
   
