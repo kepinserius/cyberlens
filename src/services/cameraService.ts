@@ -660,15 +660,24 @@ export const cameraService = {
       canvas.width = this.videoElement.videoWidth;
       canvas.height = this.videoElement.videoHeight;
       
-      // Apply mirror effect if requested
+      // Apply mirror effect if requested - PERBAIKAN IMPLEMENTASI MIRROR
       const shouldMirror = mirrored !== undefined ? mirrored : this.isMirrored;
+      
+      // Reset any previous transformations
+      context.setTransform(1, 0, 0, 1, 0, 0);
+      
       if (shouldMirror) {
+        // Cara yang benar untuk mirror - translate lalu scale
         context.translate(canvas.width, 0);
         context.scale(-1, 1);
+        console.log("CameraService: Applied mirror effect to captured frame");
       }
       
       // Draw the current video frame to the canvas
       context.drawImage(this.videoElement, 0, 0, canvas.width, canvas.height);
+      
+      // PENTING: Reset transformasi setelah menggambar
+      context.setTransform(1, 0, 0, 1, 0, 0);
       
       // Periksa jika canvas berisi data
       try {
@@ -704,11 +713,32 @@ export const cameraService = {
    * @param mirrored Whether to mirror the camera view
    */
   setMirrorMode(mirrored: boolean): void {
+    // Catat perubahan mode mirror
+    const previousMode = this.isMirrored;
     this.isMirrored = mirrored;
     
-    // We'll let the component handle the CSS transformation
-    // instead of directly manipulating the DOM here
     console.log(`CameraService: Mirror mode ${mirrored ? 'enabled' : 'disabled'}`);
+    
+    // Jika video element tersedia, kita perlu melakukan refresh
+    if (this.videoElement && previousMode !== mirrored) {
+      try {
+        // Kita tidak manipulasi DOM di sini, tapi kita perlu memastikan bahwa
+        // mirror mode berubah akan diaplikasikan dengan benar pada frame berikutnya
+        
+        // Lakukan refresh pada video element untuk memastikan perubahan terlihat
+        const currentTime = this.videoElement.currentTime;
+        
+        // Log untuk debugging
+        console.log(`CameraService: Mirror mode changed from ${previousMode} to ${mirrored}, refreshing view`);
+        
+        // Trigger refresh event jika ada
+        if (typeof window.dispatchEvent === 'function') {
+          window.dispatchEvent(new Event('camera-mirror-changed'));
+        }
+      } catch (e) {
+        console.error('Error refreshing video after mirror mode change:', e);
+      }
+    }
   },
   
   /**

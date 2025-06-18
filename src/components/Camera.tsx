@@ -38,8 +38,7 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       // Update camera service mirror mode
       cameraService.setMirrorMode(newValue);
       
-      // We'll apply the CSS transform in the render function instead of directly
-      // manipulating the DOM to avoid potential issues
+      console.log(`Camera component: Mirror mode ${newValue ? 'enabled' : 'disabled'}`);
       
       return newValue;
     });
@@ -52,7 +51,23 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       setIsMirrored(true);
       // Update camera service mirror mode
       cameraService.setMirrorMode(true);
+      console.log("Camera component: Loaded saved mirror mode: enabled");
+    } else {
+      console.log("Camera component: Loaded saved mirror mode: disabled");
     }
+    
+    // Listen for mirror mode changes from cameraService
+    const handleMirrorChange = () => {
+      console.log("Camera component: Detected mirror mode change event");
+      // Force re-render to apply mirror effect
+      setIsMirrored(cameraService.getMirrorMode());
+    };
+    
+    window.addEventListener('camera-mirror-changed', handleMirrorChange);
+    
+    return () => {
+      window.removeEventListener('camera-mirror-changed', handleMirrorChange);
+    };
   }, []);
 
   // Request camera permission and get available cameras
@@ -207,6 +222,10 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       setError(null);
       setIsRetrying(true);
       
+      // Simpan status mirror mode saat ini
+      const currentMirrorMode = isMirrored;
+      console.log(`Current mirror mode before camera switch: ${currentMirrorMode}`);
+      
       // Completely stop current camera and stream first
       stopCameraStream();
       
@@ -234,6 +253,10 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       // Directly use switchCamera from cameraService instead of startCamera
       const video = await cameraService.switchCamera(deviceId);
       
+      // Re-apply mirror mode setelah switch kamera
+      cameraService.setMirrorMode(currentMirrorMode);
+      console.log(`Re-applied mirror mode after camera switch: ${currentMirrorMode}`);
+      
       // Update video reference
       if (videoRef.current) {
         // Make sure old srcObject is cleared
@@ -249,6 +272,9 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
         
         // Set new srcObject
         videoRef.current.srcObject = video.srcObject;
+        
+        // Re-apply mirror mode pada element video
+        videoRef.current.style.transform = currentMirrorMode ? 'scaleX(-1)' : 'scaleX(1)';
         
         try {
           await videoRef.current.play();
@@ -280,7 +306,7 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
     } finally {
       setIsRetrying(false);
     }
-  }, [stopCameraStream, startCamera]);
+  }, [stopCameraStream, startCamera, isMirrored]);
 
   // Refresh camera devices list (useful for detecting newly connected cameras)
   const refreshCameraDevices = useCallback(async () => {
@@ -425,8 +451,30 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
     if (!videoRef.current) return
     
     try {
+      console.log(`Camera component: Capturing image with mirror mode: ${isMirrored}`);
+      
+      // Verifikasi bahwa video element memiliki dimensi yang valid
+      if (!videoRef.current.videoWidth || !videoRef.current.videoHeight) {
+        console.warn("Camera component: Video dimensions not available during capture");
+        throw new Error("Camera video not fully initialized. Please try again.");
+      }
+      
       // Use cameraService to capture frame with mirror mode
       const imageData = cameraService.captureFrame(isMirrored);
+      
+      // Verify we got valid image data
+      if (!imageData || !imageData.startsWith('data:image/jpeg')) {
+        console.error("Camera component: Invalid image data returned from capture");
+        throw new Error("Failed to capture valid image. Please try again.");
+      }
+      
+      // Verifikasi bahwa image data memiliki ukuran yang masuk akal
+      if (imageData.length < 1000) { // Minimal size untuk image yang valid
+        console.error("Camera component: Image data too small, likely black or empty");
+        throw new Error("Captured image appears to be empty. Please try again.");
+      }
+      
+      console.log("Camera component: Image captured successfully");
       
       // Pass the image data to the parent component
       onCapture(imageData);
@@ -434,7 +482,7 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       console.error("Error capturing image:", err)
       setError("Failed to capture image. Please try again.")
     }
-  }, [onCapture, isMirrored])
+  }, [onCapture, isMirrored]);
 
   // Handle capture button click
   const handleCaptureClick = useCallback(async () => {
@@ -588,10 +636,28 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
             autoPlay 
             playsInline 
             muted 
-            className={`w-full h-full object-cover ${isMirrored ? 'scale-x-[-1]' : ''}`}
-            style={{ transform: isMirrored ? 'scaleX(-1)' : 'scaleX(1)' }}
-            onLoadedMetadata={() => console.log("Video element onLoadedMetadata event fired")}
-            onPlaying={() => console.log("Video element onPlaying event fired")}
+            className={`w-full h-full object-cover`}
+            style={{ 
+              transform: isMirrored ? 'scaleX(-1)' : 'scaleX(1)',
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              backgroundColor: 'black'
+            }}
+            onLoadedMetadata={() => {
+              console.log("Video element onLoadedMetadata event fired");
+              // Pastikan transform style diaplikasikan dengan benar
+              if (videoRef.current) {
+                videoRef.current.style.transform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
+              }
+            }}
+            onPlaying={() => {
+              console.log("Video element onPlaying event fired");
+              // Pastikan transform style diaplikasikan dengan benar
+              if (videoRef.current) {
+                videoRef.current.style.transform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
+              }
+            }}
             onError={(e) => console.error("Video element error event:", e)}
           />
         )}
