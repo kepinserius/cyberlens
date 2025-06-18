@@ -648,41 +648,65 @@ export const cameraService = {
     }
     
     try {
-      // Create a canvas element
-      const canvas = document.createElement('canvas');
-      const context = canvas.getContext('2d', { willReadFrequently: true });
+      // IMPLEMENTASI BARU: Pendekatan sederhana tanpa transformasi kompleks
       
-      if (!context) {
+      // Determine if we should mirror
+      const shouldMirror = mirrored !== undefined ? mirrored : this.isMirrored;
+      console.log(`CameraService: Capturing frame with mirror mode: ${shouldMirror}`);
+      
+      let finalCanvas;
+      let finalContext;
+      
+      // Create a canvas element for initial capture
+      const initialCanvas = document.createElement('canvas');
+      
+      // Set canvas dimensions to match video
+      initialCanvas.width = this.videoElement.videoWidth;
+      initialCanvas.height = this.videoElement.videoHeight;
+      
+      // Get context
+      const initialContext = initialCanvas.getContext('2d');
+      if (!initialContext) {
         throw new Error('Failed to get canvas context');
       }
       
-      // Set canvas dimensions to match video
-      canvas.width = this.videoElement.videoWidth;
-      canvas.height = this.videoElement.videoHeight;
+      // METODE SIMPEL: Gambar dulu, flip canvas setelahnya jika perlu
+      // Draw video to canvas normally first
+      initialContext.drawImage(this.videoElement, 0, 0, initialCanvas.width, initialCanvas.height);
       
-      // Apply mirror effect if requested - PERBAIKAN IMPLEMENTASI MIRROR
-      const shouldMirror = mirrored !== undefined ? mirrored : this.isMirrored;
-      
-      // Reset any previous transformations
-      context.setTransform(1, 0, 0, 1, 0, 0);
-      
+      // If mirroring is needed, create a second canvas with the mirrored image
       if (shouldMirror) {
-        // Cara yang benar untuk mirror - translate lalu scale
-        context.translate(canvas.width, 0);
-        context.scale(-1, 1);
-        console.log("CameraService: Applied mirror effect to captured frame");
+        // Create a second canvas for the mirrored version
+        const mirrorCanvas = document.createElement('canvas');
+        mirrorCanvas.width = initialCanvas.width;
+        mirrorCanvas.height = initialCanvas.height;
+        
+        const mirrorContext = mirrorCanvas.getContext('2d');
+        if (!mirrorContext) {
+          throw new Error('Failed to get mirror canvas context');
+        }
+        
+        // Simple flip: scale and translate on the mirror canvas
+        mirrorContext.translate(mirrorCanvas.width, 0);
+        mirrorContext.scale(-1, 1);
+        
+        // Draw the original canvas onto the mirror canvas
+        mirrorContext.drawImage(initialCanvas, 0, 0);
+        
+        // Use the mirrored canvas as our final canvas
+        finalCanvas = mirrorCanvas;
+        finalContext = mirrorContext;
+        
+        console.log("CameraService: Created mirrored image using separate canvas");
+      } else {
+        // Use the initial canvas as our final canvas
+        finalCanvas = initialCanvas;
+        finalContext = initialContext;
       }
       
-      // Draw the current video frame to the canvas
-      context.drawImage(this.videoElement, 0, 0, canvas.width, canvas.height);
-      
-      // PENTING: Reset transformasi setelah menggambar
-      context.setTransform(1, 0, 0, 1, 0, 0);
-      
-      // Periksa jika canvas berisi data
+      // Check if we have valid image data
       try {
-        // Test if we can access pixel data - will throw if canvas is empty/corrupt
-        const testData = context.getImageData(0, 0, 1, 1);
+        const testData = finalContext.getImageData(0, 0, 1, 1);
         if (!testData || !testData.data || testData.data.length === 0) {
           throw new Error('Canvas contains no image data');
         }
@@ -691,16 +715,17 @@ export const cameraService = {
         throw new Error('Failed to capture valid image data from camera');
       }
       
-      // Get base64 encoded JPEG with quality 80% for better performance
-      // Reduce quality to 70% to avoid memory issues
-      const imageData = canvas.toDataURL('image/jpeg', 0.7);
+      // Get base64 encoded JPEG
+      const imageData = finalCanvas.toDataURL('image/jpeg', 0.8);
       
-      // Verify that we got valid image data (should start with data:image/jpeg)
+      // Log some data to verify the image
+      console.log(`CameraService: Captured image size: ${imageData.length} bytes`);
+      
+      // Verify that we got valid image data
       if (!imageData || !imageData.startsWith('data:image/jpeg')) {
         throw new Error('Invalid image data format');
       }
       
-      // Return the base64 string
       return imageData;
     } catch (error) {
       console.error('Frame capture error:', error);

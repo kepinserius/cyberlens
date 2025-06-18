@@ -440,11 +440,75 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
     setIsRetrying(true)
     setError(null)
 
+    // Reset mirror mode to false untuk mencoba tanpa mirror
+    setIsMirrored(false);
+    localStorage.setItem('camera_mirror_mode', 'false');
+    cameraService.setMirrorMode(false);
+    console.log("Camera component: Reset mirror mode to false for troubleshooting");
+
     const devices = await requestCameraPermission()
     if (devices.length > 0) {
       await startCamera(selectedDeviceId || devices[0].deviceId)
     }
   }
+  
+  // Reset all camera settings and try from scratch
+  const hardReset = useCallback(async () => {
+    console.log("Camera component: Performing hard reset of camera");
+    
+    // Completely stop and clean up
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => {
+        track.stop();
+      });
+      streamRef.current = null;
+    }
+    
+    if (videoRef.current) {
+      videoRef.current.pause();
+      if (videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        if (stream) {
+          stream.getTracks().forEach(track => {
+            track.stop();
+          });
+        }
+        videoRef.current.srcObject = null;
+      }
+    }
+    
+    // Reset mirror mode
+    setIsMirrored(false);
+    localStorage.setItem('camera_mirror_mode', 'false');
+    cameraService.setMirrorMode(false);
+    
+    // Reset other states
+    setIsCameraActive(false);
+    setError(null);
+    setIsRetrying(true);
+    
+    // Clear all camera references and service
+    cameraService.stopCamera();
+    
+    // Add a delay to ensure resources are released
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Now try to get cameras again
+    const devices = await requestCameraPermission();
+    if (devices.length > 0) {
+      await startCamera(devices[0].deviceId);
+    }
+    
+    setIsRetrying(false);
+  }, [requestCameraPermission, startCamera]);
+  
+  // Double-click handler to trigger hard reset (for troubleshooting)
+  const handleContainerDoubleClick = useCallback(() => {
+    // Only allow hard reset when camera is not working properly
+    if (!isCameraActive || error) {
+      hardReset();
+    }
+  }, [hardReset, isCameraActive, error]);
 
   // Capture image from video stream
   const captureImage = useCallback(() => {
@@ -628,38 +692,53 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
   return (
     <div className="space-y-4">
       {/* Camera View */}
-      <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
+      <div 
+        className="relative aspect-video bg-black rounded-lg overflow-hidden"
+        onDoubleClick={handleContainerDoubleClick}
+      >
         {/* Video Element */}
         {isCameraActive && (
-          <video 
-            ref={videoRef} 
-            autoPlay 
-            playsInline 
-            muted 
-            className={`w-full h-full object-cover`}
-            style={{ 
-              transform: isMirrored ? 'scaleX(-1)' : 'scaleX(1)',
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              backgroundColor: 'black'
-            }}
-            onLoadedMetadata={() => {
-              console.log("Video element onLoadedMetadata event fired");
-              // Pastikan transform style diaplikasikan dengan benar
-              if (videoRef.current) {
-                videoRef.current.style.transform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
-              }
-            }}
-            onPlaying={() => {
-              console.log("Video element onPlaying event fired");
-              // Pastikan transform style diaplikasikan dengan benar
-              if (videoRef.current) {
-                videoRef.current.style.transform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
-              }
-            }}
-            onError={(e) => console.error("Video element error event:", e)}
-          />
+          <div className="relative w-full h-full">
+            <video 
+              ref={videoRef} 
+              autoPlay 
+              playsInline 
+              muted 
+              className="w-full h-full object-cover"
+              style={{ 
+                WebkitTransform: isMirrored ? 'scaleX(-1)' : 'scaleX(1)',
+                transform: isMirrored ? 'scaleX(-1)' : 'scaleX(1)',
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                backgroundColor: 'black'
+              }}
+              onLoadedMetadata={() => {
+                console.log("Video element onLoadedMetadata event fired");
+                // Pastikan transform style diaplikasikan dengan benar
+                if (videoRef.current) {
+                  videoRef.current.style.transform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
+                  videoRef.current.style.WebkitTransform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
+                }
+              }}
+              onPlaying={() => {
+                console.log("Video element onPlaying event fired");
+                // Pastikan transform style diaplikasikan dengan benar
+                if (videoRef.current) {
+                  videoRef.current.style.transform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
+                  videoRef.current.style.WebkitTransform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
+                }
+              }}
+              onError={(e) => console.error("Video element error event:", e)}
+            />
+            
+            {/* Indikator Mirror Mode */}
+            {isMirrored && (
+              <div className="absolute bottom-2 right-2 bg-blue-500/70 px-2 py-1 rounded-md text-xs text-white font-medium">
+                Mirror Mode
+              </div>
+            )}
+          </div>
         )}
 
         {/* Loading State */}
