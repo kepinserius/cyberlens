@@ -19,16 +19,20 @@ export const cameraService = {
    */
   checkBrowserSupport(): { 
     isLinux: boolean; 
+    isWindows: boolean;
     isChrome: boolean; 
     isFirefox: boolean;
+    isEdge: boolean;
     hasMediaDevices: boolean;
     hasGetUserMedia: boolean;
     recommendedBrowser: string;
   } {
     const userAgent = navigator.userAgent.toLowerCase();
     const isLinux = userAgent.includes('linux');
+    const isWindows = userAgent.includes('windows');
     const isChrome = userAgent.includes('chrome') && !userAgent.includes('edg');
     const isFirefox = userAgent.includes('firefox');
+    const isEdge = userAgent.includes('edg');
     const hasMediaDevices = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
     
     // Use type assertion for deprecated methods
@@ -40,12 +44,16 @@ export const cameraService = {
     let recommendedBrowser = "Chrome";
     if (isLinux) {
       recommendedBrowser = "Firefox"; // Firefox often works better with cameras on Linux
+    } else if (isWindows && isChrome) {
+      recommendedBrowser = "Edge"; // Edge might work better for camera on Windows
     }
     
     return {
       isLinux,
+      isWindows,
       isChrome,
       isFirefox,
+      isEdge,
       hasMediaDevices,
       hasGetUserMedia,
       recommendedBrowser
@@ -123,6 +131,125 @@ export const cameraService = {
           // Provide more helpful error message for Linux users
           if (browserSupport.isChrome && browserSupport.recommendedBrowser === "Firefox") {
             throw new Error("Camera access failed on Linux. Try using Firefox browser instead, or check if your camera is properly connected and enabled in your system settings.");
+          }
+          // Fall through to standard approach
+        }
+      }
+      
+      // Special handling for Windows
+      if (browserSupport.isWindows) {
+        console.log("CameraService: Windows system detected, using specialized Windows initialization");
+        
+        // Make sure to release any existing camera resources
+        this.stopCamera();
+        
+        try {
+          // For Windows, we need to be extra careful about resource allocation
+          // First, try to force any existing camera resources to be released
+          try {
+            const dummyAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            dummyAudioStream.getTracks().forEach(track => track.stop());
+            console.log("CameraService: Released audio resources");
+            
+            // Small delay to ensure resources are freed
+            await new Promise(resolve => setTimeout(resolve, 300));
+          } catch (e) {
+            // Ignore audio permission errors
+          }
+          
+          // For Windows, we'll try progressive approach starting with lowest resolution
+          const resolutions = [
+            { width: 320, height: 240, frameRate: 15 },
+            { width: 640, height: 480, frameRate: 15 },
+            { width: 1280, height: 720, frameRate: 15 }
+          ];
+          
+          let stream = null;
+          let error = null;
+          
+          // Try each resolution until one works
+          for (const resolution of resolutions) {
+            try {
+              console.log(`CameraService: Windows - trying camera with resolution ${resolution.width}x${resolution.height}`);
+              
+              // Use exact constraints to force the specific resolution
+              stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                  width: { ideal: resolution.width },
+                  height: { ideal: resolution.height },
+                  frameRate: { ideal: resolution.frameRate }
+                },
+                audio: false
+              });
+              
+              console.log(`CameraService: Windows - successfully accessed camera at ${resolution.width}x${resolution.height}`);
+              break;
+            } catch (err) {
+              error = err;
+              console.warn(`CameraService: Windows - failed with resolution ${resolution.width}x${resolution.height}:`, err);
+            }
+          }
+          
+          // If all resolutions fail, try with {video: true}
+          if (!stream) {
+            try {
+              console.log("CameraService: Windows - trying with {video: true} as last resort");
+              stream = await navigator.mediaDevices.getUserMedia({
+                video: true,
+                audio: false
+              });
+              console.log("CameraService: Windows - successfully accessed camera with basic constraints");
+            } catch (basicErr) {
+              console.error("CameraService: Windows - all camera access attempts failed");
+              throw error || basicErr || new Error("Could not access camera on Windows");
+            }
+          }
+          
+          // Create and configure video element with all Windows-compatible attributes
+          const video = document.createElement('video');
+          
+          // Set all possible attributes for maximum compatibility
+          video.setAttribute('playsinline', 'true');
+          video.setAttribute('webkit-playsinline', 'true');
+          video.setAttribute('muted', 'true');
+          video.setAttribute('autoplay', 'true');
+          video.muted = true;
+          video.volume = 0;
+          video.autoplay = true;
+          video.playsInline = true;
+          
+          // Set the stream as source
+          video.srcObject = stream;
+          
+          // Force a play attempt immediately with retry
+          let playSuccess = false;
+          for (let i = 0; i < 3; i++) {
+            try {
+              await video.play();
+              console.log(`CameraService: Windows video.play() successful on attempt ${i+1}`);
+              playSuccess = true;
+              break;
+            } catch (playErr) {
+              console.warn(`CameraService: Windows play attempt ${i+1} failed, will retry:`, playErr);
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+          }
+          
+          if (!playSuccess) {
+            console.warn("CameraService: Windows - all play attempts failed but continuing");
+          }
+          
+          // Store references
+          this.videoStream = stream;
+          this.videoElement = video;
+          
+          return video;
+        } catch (winErr) {
+          console.error("CameraService: Windows-specific camera approach failed:", winErr);
+          
+          // Provide more helpful error message for Windows users
+          if (browserSupport.isChrome) {
+            throw new Error("Camera access failed on Windows. Try closing all browser windows completely, then restart your browser. You might also need to check camera permissions in Windows settings.");
           }
           // Fall through to standard approach
         }
@@ -720,6 +847,9 @@ export const cameraService = {
     try {
       console.log(`CameraService: Switching to camera with ID: ${deviceId}`);
       
+      // Check browser environment
+      const browserSupport = this.checkBrowserSupport();
+      
       // Force stop ALL active tracks from any previous streams
       if (this.videoStream) {
         console.log("CameraService: Stopping all tracks from previous stream");
@@ -753,6 +883,130 @@ export const cameraService = {
       
       // Add another small delay after resource release attempt
       await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Special handling for Windows
+      if (browserSupport.isWindows) {
+        console.log("CameraService: Using Windows-specific camera switching");
+        
+        try {
+          // For Windows, we'll force a complete release of all media devices first
+          // This helps with Chrome's resource handling issues on Windows
+          
+          // Force any existing video tracks to stop
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const videoDevices = devices.filter(device => device.kind === 'videoinput');
+          console.log(`CameraService: Windows - found ${videoDevices.length} video devices before switching`);
+          
+          // On Windows, we need to be extra careful with resource cleanup
+          if (typeof window.gc === 'function') {
+            try {
+              window.gc();
+              console.log("CameraService: Windows - forced garbage collection");
+            } catch (e) {
+              // Ignore errors
+            }
+          }
+          
+          // For Windows, we need to try with the most permissive constraints first
+          console.log(`CameraService: Windows - switching to camera ${deviceId}`);
+          
+          // Try first with simple constraints
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+              video: { 
+                deviceId: { exact: deviceId }
+              },
+              audio: false
+            });
+            
+            // Create new video element
+            const video = document.createElement('video');
+            video.srcObject = stream;
+            video.autoplay = true;
+            video.playsInline = true;
+            video.muted = true;
+            
+            // Multiple play attempts for Windows
+            let playSuccess = false;
+            for (let i = 0; i < 3; i++) {
+              try {
+                await video.play();
+                console.log(`CameraService: Windows video.play() successful on attempt ${i+1} during switch`);
+                playSuccess = true;
+                break;
+              } catch (playErr) {
+                console.warn(`CameraService: Windows play attempt ${i+1} failed during switch, will retry:`, playErr);
+                await new Promise(resolve => setTimeout(resolve, 500));
+              }
+            }
+            
+            // Even if play fails, continue with the video element
+            this.videoStream = stream;
+            this.videoElement = video;
+            
+            return video;
+          } catch (err) {
+            console.warn("CameraService: Windows - simple camera switch failed, trying progressive approach:", err);
+            
+            // Try with progressive resolutions
+            const resolutions = [
+              { width: 320, height: 240 },
+              { width: 640, height: 480 },
+              { width: 1280, height: 720 }
+            ];
+            
+            let stream = null;
+            let error = null;
+            
+            // Try each resolution until one works
+            for (const resolution of resolutions) {
+              try {
+                console.log(`CameraService: Windows - trying camera with resolution ${resolution.width}x${resolution.height}`);
+                stream = await navigator.mediaDevices.getUserMedia({
+                  video: {
+                    deviceId: { exact: deviceId },
+                    width: { ideal: resolution.width },
+                    height: { ideal: resolution.height }
+                  },
+                  audio: false
+                });
+                
+                console.log(`CameraService: Windows - successfully accessed camera at ${resolution.width}x${resolution.height}`);
+                break;
+              } catch (err) {
+                error = err;
+                console.warn(`CameraService: Windows - failed with resolution ${resolution.width}x${resolution.height}:`, err);
+              }
+            }
+            
+            if (!stream) {
+              throw error || new Error("Could not switch to camera on Windows");
+            }
+            
+            // Create new video element
+            const video = document.createElement('video');
+            video.srcObject = stream;
+            video.autoplay = true;
+            video.playsInline = true;
+            video.muted = true;
+            
+            try {
+              await video.play();
+              console.log("CameraService: Windows - video playing after resolution-based switch");
+            } catch (playErr) {
+              console.warn("CameraService: Windows - play failed after resolution-based switch:", playErr);
+            }
+            
+            this.videoStream = stream;
+            this.videoElement = video;
+            
+            return video;
+          }
+        } catch (winErr) {
+          console.error("CameraService: Windows-specific camera switch failed:", winErr);
+          // Continue with standard approach as fallback
+        }
+      }
       
       // Handle special case for default camera
       if (deviceId === "default-camera") {

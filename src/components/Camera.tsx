@@ -329,19 +329,60 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
       try {
         console.log("Initializing camera...")
         
-        // Get available camera devices
-        const devices = await requestCameraPermission()
+        // Check browser support and platform
+        const isWindows = navigator.userAgent.toLowerCase().includes('windows');
+        const isChrome = navigator.userAgent.toLowerCase().includes('chrome') && !navigator.userAgent.toLowerCase().includes('edg');
         
-        // Automatically select external camera if available
-        const externalCamera = devices.find(device => cameraService.isExternalCamera(device))
-        if (externalCamera) {
-          console.log("External camera detected, using it by default:", externalCamera.label)
-          setSelectedDeviceId(externalCamera.deviceId)
-          await startCamera(externalCamera.deviceId)
-        } else if (devices.length > 0) {
-          console.log("No external camera found, using first available camera")
-          setSelectedDeviceId(devices[0].deviceId)
-          await startCamera(devices[0].deviceId)
+        if (isWindows) {
+          console.log("Windows system detected, using specific Windows handling");
+          // On Windows, we'll use a more forceful approach
+          try {
+            // First, ensure all previous streams are closed
+            stopCameraStream();
+            
+            // Add a small delay to ensure clean start
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Get available camera devices with extra timeout for Windows
+            const devices = await requestCameraPermission();
+            
+            if (devices.length > 0) {
+              // For Windows, use {video: true} constraint first to force permission dialog
+              const initialStream = await navigator.mediaDevices.getUserMedia({
+                video: true,
+                audio: false
+              });
+              
+              // Stop this initial stream to free up the camera
+              initialStream.getTracks().forEach(track => track.stop());
+              
+              // Add a small delay after getting permission
+              await new Promise(resolve => setTimeout(resolve, 500));
+              
+              // Now try with the specific camera
+              setSelectedDeviceId(devices[0].deviceId);
+              await startCamera(devices[0].deviceId);
+            }
+          } catch (winErr) {
+            console.error("Windows camera initialization error:", winErr);
+            setError(`Windows camera error: ${winErr instanceof Error ? winErr.message : "Unknown error"}. Refresh the page and try again.`);
+          }
+        } else {
+          // Normal flow for non-Windows systems
+          // Get available camera devices
+          const devices = await requestCameraPermission()
+          
+          // Automatically select external camera if available
+          const externalCamera = devices.find(device => cameraService.isExternalCamera(device))
+          if (externalCamera) {
+            console.log("External camera detected, using it by default:", externalCamera.label)
+            setSelectedDeviceId(externalCamera.deviceId)
+            await startCamera(externalCamera.deviceId)
+          } else if (devices.length > 0) {
+            console.log("No external camera found, using first available camera")
+            setSelectedDeviceId(devices[0].deviceId)
+            await startCamera(devices[0].deviceId)
+          }
         }
       } catch (err) {
         console.error("Camera initialization error:", err)
@@ -499,9 +540,11 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
 
   // Error state
   if (hasPermission === false) {
-    // Check if we're on Linux to provide more specific guidance
+    // Check if we're on specific platforms to provide more targeted guidance
     const isLinux = navigator.userAgent.toLowerCase().includes('linux');
+    const isWindows = navigator.userAgent.toLowerCase().includes('windows');
     const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
+    const isChrome = navigator.userAgent.toLowerCase().includes('chrome') && !navigator.userAgent.toLowerCase().includes('edg');
     
     let errorMessage = error;
     let helpText = "Try reconnecting your camera or check browser permissions.";
@@ -509,6 +552,9 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
     if (isLinux && !isFirefox && error?.includes("Could not access any camera")) {
       errorMessage = "Camera access failed on Linux";
       helpText = "Linux often works better with Firefox browser for camera access. Try switching browsers or check if your camera is enabled in system settings.";
+    } else if (isWindows && isChrome && error?.includes("Connecting to camera")) {
+      errorMessage = "Camera permission granted but video not displaying";
+      helpText = "This is a common Windows + Chrome issue. Try these steps: 1) Close all browser windows completely, 2) Disconnect and reconnect your camera if external, 3) Restart your browser and try again.";
     }
     
     return (
