@@ -706,7 +706,7 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
               muted 
               className="w-full h-full object-cover"
               style={{ 
-                WebkitTransform: isMirrored ? 'scaleX(-1)' : 'scaleX(1)',
+                webkitTransform: isMirrored ? 'scaleX(-1)' : 'scaleX(1)',
                 transform: isMirrored ? 'scaleX(-1)' : 'scaleX(1)',
                 width: '100%',
                 height: '100%',
@@ -718,7 +718,7 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
                 // Pastikan transform style diaplikasikan dengan benar
                 if (videoRef.current) {
                   videoRef.current.style.transform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
-                  videoRef.current.style.WebkitTransform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
+                  videoRef.current.style.webkitTransform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
                 }
               }}
               onPlaying={() => {
@@ -726,7 +726,7 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
                 // Pastikan transform style diaplikasikan dengan benar
                 if (videoRef.current) {
                   videoRef.current.style.transform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
-                  videoRef.current.style.WebkitTransform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
+                  videoRef.current.style.webkitTransform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
                 }
               }}
               onError={(e) => console.error("Video element error event:", e)}
