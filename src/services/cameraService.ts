@@ -648,65 +648,47 @@ export const cameraService = {
     }
     
     try {
-      // IMPLEMENTASI BARU: Pendekatan sederhana tanpa transformasi kompleks
+      // IMPLEMENTASI SEDERHANA: Gunakan 1 canvas dengan gambar normal
       
       // Determine if we should mirror
       const shouldMirror = mirrored !== undefined ? mirrored : this.isMirrored;
       console.log(`CameraService: Capturing frame with mirror mode: ${shouldMirror}`);
       
-      let finalCanvas;
-      let finalContext;
-      
-      // Create a canvas element for initial capture
-      const initialCanvas = document.createElement('canvas');
-      
-      // Set canvas dimensions to match video
-      initialCanvas.width = this.videoElement.videoWidth;
-      initialCanvas.height = this.videoElement.videoHeight;
+      // Create a canvas with the same dimensions as the video
+      const canvas = document.createElement('canvas');
+      canvas.width = this.videoElement.videoWidth;
+      canvas.height = this.videoElement.videoHeight;
       
       // Get context
-      const initialContext = initialCanvas.getContext('2d');
-      if (!initialContext) {
+      const context = canvas.getContext('2d');
+      if (!context) {
         throw new Error('Failed to get canvas context');
       }
       
-      // METODE SIMPEL: Gambar dulu, flip canvas setelahnya jika perlu
-      // Draw video to canvas normally first
-      initialContext.drawImage(this.videoElement, 0, 0, initialCanvas.width, initialCanvas.height);
-      
-      // If mirroring is needed, create a second canvas with the mirrored image
+      // For mirrored capture, flip the canvas horizontally
       if (shouldMirror) {
-        // Create a second canvas for the mirrored version
-        const mirrorCanvas = document.createElement('canvas');
-        mirrorCanvas.width = initialCanvas.width;
-        mirrorCanvas.height = initialCanvas.height;
+        // Save the current state
+        context.save();
         
-        const mirrorContext = mirrorCanvas.getContext('2d');
-        if (!mirrorContext) {
-          throw new Error('Failed to get mirror canvas context');
-        }
+        // Flip the context horizontally
+        context.translate(canvas.width, 0);
+        context.scale(-1, 1);
         
-        // Simple flip: scale and translate on the mirror canvas
-        mirrorContext.translate(mirrorCanvas.width, 0);
-        mirrorContext.scale(-1, 1);
+        // Draw the video frame on the flipped context
+        context.drawImage(this.videoElement, 0, 0, canvas.width, canvas.height);
         
-        // Draw the original canvas onto the mirror canvas
-        mirrorContext.drawImage(initialCanvas, 0, 0);
+        // Restore the context to its original state
+        context.restore();
         
-        // Use the mirrored canvas as our final canvas
-        finalCanvas = mirrorCanvas;
-        finalContext = mirrorContext;
-        
-        console.log("CameraService: Created mirrored image using separate canvas");
+        console.log("CameraService: Applied mirror effect to canvas for capture");
       } else {
-        // Use the initial canvas as our final canvas
-        finalCanvas = initialCanvas;
-        finalContext = initialContext;
+        // Regular capture without mirroring
+        context.drawImage(this.videoElement, 0, 0, canvas.width, canvas.height);
       }
       
-      // Check if we have valid image data
+      // Validate image data
       try {
-        const testData = finalContext.getImageData(0, 0, 1, 1);
+        const testData = context.getImageData(0, 0, 1, 1);
         if (!testData || !testData.data || testData.data.length === 0) {
           throw new Error('Canvas contains no image data');
         }
@@ -716,7 +698,7 @@ export const cameraService = {
       }
       
       // Get base64 encoded JPEG
-      const imageData = finalCanvas.toDataURL('image/jpeg', 0.8);
+      const imageData = canvas.toDataURL('image/jpeg', 0.8);
       
       // Log some data to verify the image
       console.log(`CameraService: Captured image size: ${imageData.length} bytes`);

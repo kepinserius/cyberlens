@@ -704,10 +704,8 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
               autoPlay 
               playsInline 
               muted 
-              className="w-full h-full object-cover"
-              style={{ 
-                webkitTransform: isMirrored ? 'scaleX(-1)' : 'scaleX(1)',
-                transform: isMirrored ? 'scaleX(-1)' : 'scaleX(1)',
+              className={`w-full h-full object-cover ${isMirrored ? 'video-mirrored' : 'video-normal'}`}
+              style={{
                 width: '100%',
                 height: '100%',
                 objectFit: 'cover',
@@ -715,18 +713,28 @@ export default function CameraComponent({ onCapture, isScanning }: CameraProps) 
               }}
               onLoadedMetadata={() => {
                 console.log("Video element onLoadedMetadata event fired");
-                // Pastikan transform style diaplikasikan dengan benar
+                // Tambahkan/hapus class untuk mirror mode
                 if (videoRef.current) {
-                  videoRef.current.style.transform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
-                  videoRef.current.style.webkitTransform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
+                  if (isMirrored) {
+                    videoRef.current.classList.add('video-mirrored');
+                    videoRef.current.classList.remove('video-normal');
+                  } else {
+                    videoRef.current.classList.add('video-normal');
+                    videoRef.current.classList.remove('video-mirrored');
+                  }
                 }
               }}
               onPlaying={() => {
                 console.log("Video element onPlaying event fired");
-                // Pastikan transform style diaplikasikan dengan benar
+                // Tambahkan/hapus class untuk mirror mode
                 if (videoRef.current) {
-                  videoRef.current.style.transform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
-                  videoRef.current.style.webkitTransform = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
+                  if (isMirrored) {
+                    videoRef.current.classList.add('video-mirrored');
+                    videoRef.current.classList.remove('video-normal');
+                  } else {
+                    videoRef.current.classList.add('video-normal');
+                    videoRef.current.classList.remove('video-mirrored');
+                  }
                 }
               }}
               onError={(e) => console.error("Video element error event:", e)}

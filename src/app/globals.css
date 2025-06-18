@@ -1,0 +1,12 @@
+/* Tambahkan di bagian akhir file globals.css */
+
+/* CSS untuk mirror mode kamera */
+.video-mirrored {
+  -webkit-transform: scaleX(-1);
+  transform: scaleX(-1);
+}
+
+.video-normal {
+  -webkit-transform: scaleX(1);
+  transform: scaleX(1);
+} 
