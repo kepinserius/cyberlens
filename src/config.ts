@@ -4,7 +4,7 @@ export const config = {
   api: {
     // PENTING: Ganti dengan API key DeepSeek yang valid
     // Dapatkan API key di: https://platform.deepseek.com/api-keys
-    deepseekApiKey: process.env.REACT_APP_DEEPSEEK_API_KEY || 'sk-aa7f7d4aa02946aca25ab8dd7c30ff75',
+    deepseekApiKey: process.env.REACT_APP_DEEPSEEK_API_KEY || '',
     deepseekEndpoint: 'https://api.deepseek.com/v1/chat/completions',
   },
   
@@ -12,7 +12,7 @@ export const config = {
   apiKeys: {
     // PENTING: Ganti dengan API key DeepSeek yang valid
     // Dapatkan API key di: https://platform.deepseek.com/api-keys
-    deepseek: process.env.REACT_APP_DEEPSEEK_API_KEY || 'sk-aa7f7d4aa02946aca25ab8dd7c30ff75',
+    deepseek: process.env.REACT_APP_DEEPSEEK_API_KEY || '',
     openai: process.env.REACT_APP_OPENAI_API_KEY || '',
   },
   

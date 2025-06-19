@@ -5,6 +5,7 @@ import { config } from '../config';
 
 // Analisis sederhana teks untuk mendeteksi ancaman
 const analyzeTextForThreats = (text: string): AnalysisResult => {
+  console.log("OCR: Analyzing extracted text for threats...");
   // Membuat lowercase untuk mempermudah deteksi
   const lowerText = text.toLowerCase();
   
@@ -23,7 +24,16 @@ const analyzeTextForThreats = (text: string): AnalysisResult => {
     'kesempatan terakhir', 'hanya hari ini', 'batas waktu', 'jumlah terbatas',
     'buruan', 'cepat', 'daftarkan', 'unduh sekarang', 'konfirmasi data',
     'informasi rahasia', 'informasi pribadi', 'login segera', 'reset password',
-    'peringatan keamanan', 'masalah akun', 'verifikasi akun', 'validasi data'
+    'peringatan keamanan', 'masalah akun', 'verifikasi akun', 'validasi data',
+    // Tambahan kata kunci penipuan populer di Indonesia
+    'undian', 'whatsapp', 'wa', 'telp', 'hubungi', 'call', 'telepon',
+    'kirim uang', 'kirim pulsa', 'dana darurat', 'pinjaman', 'lelang',
+    'murah', 'dijual cepat', 'kecelakaan', 'sakit', 'rumah sakit',
+    'polisi', 'ditangkap', 'dipenjara', 'diproses hukum', 'denda',
+    'pajak', 'tunggakan', 'kena sanksi', 'investasi cepat', 'investasi mudah',
+    'hasil cepat', 'keuntungan pasti', 'untung besar', 'kripto', 'bitcoin',
+    'airdrop', 'emas murah', 'ikut saya', 'minimal deposit', 'deposit murah',
+    'jutaan rupiah', 'penghasilan pasif', 'uang melimpah', 'pengundian'
   ];
   
   // Kata kunci yang mungkin mengindikasikan malware
@@ -39,7 +49,12 @@ const analyzeTextForThreats = (text: string): AnalysisResult => {
     'sistem terinfeksi', 'komputer terinfeksi', 'perangkat terinfeksi',
     'izinkan akses', 'izinkan notifikasi', 'izinkan pemberitahuan',
     'versi terbaru', 'versi pro', 'versi premium', 'versi penuh',
-    'akses terbatas', 'aplikasi berbahaya', 'tidak terdeteksi antivirus'
+    'akses terbatas', 'aplikasi berbahaya', 'tidak terdeteksi antivirus',
+    // Tambahan kata kunci umum untuk aplikasi berbahaya di Indonesia
+    'apk mod', 'mod apk', 'aplikasi mod', 'hack pulsa', 'bobol wifi',
+    'sadap wa', 'sadap whatsapp', 'lacak lokasi', 'intip chat',
+    'bobol password', 'login tanpa password', 'curi data', 'kunci layar',
+    'aplikasi terlarang', 'tools hacker', 'tools hack', 'script hack'
   ];
   
   // Kata kunci untuk transaksi keuangan
@@ -64,48 +79,59 @@ const analyzeTextForThreats = (text: string): AnalysisResult => {
   let malwareCount = 0;
   let financialCount = 0;
   
-  // Periksa kata kunci phishing
+  // Deteksi dan log kata kunci phishing yang ditemukan
+  const detectedPhishingWords: string[] = [];
   phishingKeywords.forEach(keyword => {
     if (lowerText.includes(keyword)) {
       phishingCount++;
-      console.log(`Phishing keyword found: ${keyword}`);
+      detectedPhishingWords.push(keyword);
+      console.log(`OCR: Phishing keyword found: "${keyword}"`);
     }
   });
   
-  // Periksa kata kunci malware
+  // Deteksi dan log kata kunci malware yang ditemukan
+  const detectedMalwareWords: string[] = [];
   malwareKeywords.forEach(keyword => {
     if (lowerText.includes(keyword)) {
       malwareCount++;
-      console.log(`Malware keyword found: ${keyword}`);
+      detectedMalwareWords.push(keyword);
+      console.log(`OCR: Malware keyword found: "${keyword}"`);
     }
   });
   
-  // Periksa kata kunci keuangan
+  // Deteksi dan log kata kunci keuangan yang ditemukan
+  const detectedFinancialWords: string[] = [];
   financialKeywords.forEach(keyword => {
     if (lowerText.includes(keyword)) {
       financialCount++;
-      console.log(`Financial keyword found: ${keyword}`);
+      detectedFinancialWords.push(keyword);
+      console.log(`OCR: Financial keyword found: "${keyword}"`);
     }
   });
   
+  // Ringkasan jumlah keyword yang ditemukan
+  console.log(`OCR: Total phishing keywords found: ${phishingCount}, malware: ${malwareCount}, financial: ${financialCount}`);
+  
   // Tentukan tingkat risiko berdasarkan jumlah kata kunci
   let riskLevel: 'safe' | 'low' | 'medium' | 'high' | 'unknown' = 'safe';
-  let confidenceScore = 0.95;
+  let confidenceScore = 0.70; // Turunkan confidence default dari 0.95 agar tidak terlalu percaya diri
   let threats: Threat[] = [];
   let recommendations: string[] = [];
   let summary = '';
   
   // Tingkat risiko berdasarkan jumlah kata kunci yang terdeteksi
-  if (phishingCount >= 3 || (phishingCount >= 2 && financialCount >= 2)) {
+  // Membuat logika lebih sensitif (terutama untuk mendeteksi penipuan)
+  if (phishingCount >= 2 || (phishingCount >= 1 && financialCount >= 1)) {
+    // Merendahkan threshold untuk penipuan
     riskLevel = 'high';
-    confidenceScore = 0.9;
+    confidenceScore = 0.85;
     
     summary = 'Terdeteksi risiko phishing tinggi pada gambar.';
     
     threats.push({
       type: 'phishing',
-      description: `Terdeteksi ${phishingCount} kata kunci phishing dan ${financialCount} kata kunci finansial.`,
-      confidence: 0.9
+      description: `Terdeteksi ${phishingCount} kata kunci phishing dan ${financialCount} kata kunci finansial: ${[...detectedPhishingWords, ...detectedFinancialWords].join(', ')}`,
+      confidence: 0.85
     });
     
     recommendations = [
@@ -114,16 +140,17 @@ const analyzeTextForThreats = (text: string): AnalysisResult => {
       'Hindari mengklik tautan langsung dari gambar ini',
       'Jika ini terkait transaksi finansial, hubungi institusi resmi melalui kontak yang terverifikasi'
     ];
-  } else if (malwareCount >= 2 || (phishingCount >= 1 && malwareCount >= 1)) {
+  } else if (malwareCount >= 1 || (phishingCount >= 1 && malwareCount >= 0)) {
+    // Merendahkan threshold untuk penipuan malware
     riskLevel = 'medium';
-    confidenceScore = 0.7;
+    confidenceScore = 0.70;
     
-    summary = 'Terdeteksi risiko malware sedang pada gambar.';
+    summary = 'Terdeteksi risiko keamanan sedang pada gambar.';
     
     threats.push({
-      type: 'malware',
-      description: `Terdeteksi ${malwareCount} kata kunci malware.`,
-      confidence: 0.7
+      type: 'security',
+      description: `Terdeteksi ${malwareCount} kata kunci keamanan dan ${phishingCount} kata kunci mencurigakan: ${[...detectedMalwareWords, ...detectedPhishingWords].join(', ')}`,
+      confidence: 0.70
     });
     
     recommendations = [
@@ -132,19 +159,17 @@ const analyzeTextForThreats = (text: string): AnalysisResult => {
       'Pastikan memiliki antivirus yang aktif dan terbarui',
       'Verifikasi keaslian pengirim sebelum mengunduh apa pun'
     ];
-  } else if (phishingCount >= 1 || financialCount >= 1) {
+  } else if (financialCount >= 1 || phishingCount >= 1) {
     riskLevel = 'low';
-    confidenceScore = 0.5;
+    confidenceScore = 0.60;
     
-    summary = 'Terdeteksi risiko rendah pada gambar.';
+    summary = 'Terdeteksi beberapa indikasi yang mencurigakan pada gambar.';
     
-    if (phishingCount >= 1) {
-      threats.push({
-        type: 'suspicious-content',
-        description: `Terdeteksi ${phishingCount} kata kunci yang mencurigakan.`,
-        confidence: 0.5
-      });
-    }
+    threats.push({
+      type: 'suspicious-content',
+      description: `Terdeteksi ${financialCount} kata kunci keuangan dan ${phishingCount} kata kunci mencurigakan: ${[...detectedFinancialWords, ...detectedPhishingWords].join(', ')}`,
+      confidence: 0.60
+    });
     
     recommendations = [
       'Berhati-hati dengan informasi yang diminta',
@@ -152,12 +177,14 @@ const analyzeTextForThreats = (text: string): AnalysisResult => {
       'Jangan memberikan informasi pribadi atau finansial tanpa verifikasi'
     ];
   } else {
-    summary = 'Tidak terdeteksi risiko keamanan pada teks yang diekstrak.';
+    summary = 'Tidak terdeteksi risiko keamanan signifikan pada teks yang diekstrak.';
     recommendations = [
       'Tetap berhati-hati dengan konten online',
       'Selalu verifikasi pengirim atau sumber informasi'
     ];
   }
+
+  console.log(`OCR: Analysis result - Risk level: ${riskLevel}, Confidence: ${confidenceScore.toFixed(2)}`);
 
   // Menambahkan teks yang diekstrak sebagai bagian dari analisis
   const details = [
@@ -172,7 +199,8 @@ const analyzeTextForThreats = (text: string): AnalysisResult => {
     summary,
     recommendations,
     details,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    rawAnalysis: text // Tampilkan teks OCR mentah untuk debugging
   };
 };
 

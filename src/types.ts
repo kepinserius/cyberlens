@@ -9,11 +9,12 @@ export interface Threat {
 export interface AnalysisResult {
   riskLevel: 'safe' | 'low' | 'medium' | 'high' | 'unknown';
   confidenceScore: number;
+  threats: Threat[];
   summary: string;
-  details?: string[];
-  threats?: Threat[];
   recommendations: string[];
-  timestamp: number | string;
+  details?: string[];
+  timestamp: string;
+  rawAnalysis?: string;
 }
 
 // Define scan history item interface
@@ -29,4 +30,27 @@ declare global {
   interface Window {
     require?: (module: string) => any;
   }
+}
+
+// Camera configuration options
+export interface CameraOptions {
+  width?: number;
+  height?: number;
+  facingMode?: 'user' | 'environment';
+  frameRate?: number;
+  mirrored?: boolean;
+}
+
+// Configuration for external API services
+export interface ApiConfig {
+  endpoint: string;
+  apiKey: string;
+}
+
+// Camera device classification
+export enum CameraType {
+  UNKNOWN = 'unknown',
+  INTERNAL = 'internal',
+  EXTERNAL = 'external',
+  VIRTUAL = 'virtual'
 }

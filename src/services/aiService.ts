@@ -213,26 +213,43 @@ const analyzeImage = async (imageData: string): Promise<AnalysisResult> => {
     // Selalu gunakan DeepSeek API jika konfigurasi tidak menggunakan mock data
     if (!config.application.useMockData) {
       try {
+        console.log("Mencoba menganalisis gambar dengan DeepSeek API...");
         result = await analyzeWithDeepSeek(processedImageData);
+        console.log("Analisis DeepSeek berhasil dengan risk level:", result.riskLevel);
       } catch (error) {
         console.error('Error dalam DeepSeek API:', error);
         
         // Hanya gunakan OCR sebagai fallback jika OCR diaktifkan dan dikonfigurasi sebagai backup
         if (config.ocr?.enabled !== false && config.ocr?.useAsBackup !== false) {
-          console.log('Mencoba OCR sebagai alternatif...');
-          result = await ocrService.analyzeImageWithOCR(processedImageData);
+          console.log('Mencoba OCR sebagai alternatif karena DeepSeek API gagal...');
+          try {
+            // Tambah timeout untuk OCR agar tidak menggantung aplikasi
+            const ocrPromise = ocrService.analyzeImageWithOCR(processedImageData);
+            const timeoutPromise = new Promise<never>((_, reject) => {
+              setTimeout(() => reject(new Error('OCR timeout')), 30000); // 30 detik timeout
+            });
+            
+            result = await Promise.race([ocrPromise, timeoutPromise]) as AnalysisResult;
+            console.log("Analisis OCR berhasil dengan risk level:", result.riskLevel);
+            
+            // Tambahkan penanda bahwa ini hasil OCR
+            result.summary = `[OCR Analysis] ${result.summary}`;
+          } catch (ocrError) {
+            console.error('Error dalam OCR fallback:', ocrError);
+            throw new Error(`Analisis gagal - DeepSeek API: ${error}. OCR: ${ocrError}`);
+          }
         } else {
           console.log('OCR tidak diaktifkan sebagai fallback, melempar error asli');
           throw error; // Lempar kembali error karena OCR tidak diaktifkan
         }
       }
     } else {
-    // Hanya gunakan mock data jika dikonfigurasi untuk menggunakan mock data
-    await new Promise(resolve => setTimeout(resolve, MOCK_ANALYSIS_DELAY));
-    const riskLevel = getRandomRiskLevel();
+      // Hanya gunakan mock data jika dikonfigurasi untuk menggunakan mock data
+      await new Promise(resolve => setTimeout(resolve, MOCK_ANALYSIS_DELAY));
+      const riskLevel = getRandomRiskLevel();
       result = { ...mockResults[riskLevel], timestamp: new Date().toISOString() };
     
-    console.log("Menggunakan mock data dengan risk level:", riskLevel);
+      console.log("Menggunakan mock data dengan risk level:", riskLevel);
     }
     
     // Simpan hasil ke cache
@@ -270,16 +287,35 @@ const analyzeWithDeepSeek = async (imageData: string): Promise<AnalysisResult> =
       );
     }
     
+    // Format prompt yang lebih terstruktur untuk memfasilitasi ekstraksi informasi
+    const promptText = `Analisis tangkapan layar ini untuk ancaman keamanan, upaya phishing, atau risiko potensial lainnya. 
+Harap identifikasi elemen mencurigakan, antarmuka yang menyesatkan, atau tanda-tanda penipuan.
+
+Berikan hasil analisis Anda dalam format yang terstruktur berikut:
+1. RISIKO: [tinggi/sedang/rendah/aman]
+2. THREATS: (daftar ancaman terdeteksi)
+3. SUMMARY: (ringkasan analisis)
+4. RECOMMENDATIONS: (rekomendasi untuk pengguna)
+
+Untuk tingkat RISIKO, gunakan kriteria berikut:
+- tinggi: Gambar berisi konten berbahaya yang jelas, seperti halaman phishing, virus, malware, atau penipuan.
+- sedang: Gambar mencurigakan dan mungkin berbahaya, tetapi tidak sepenuhnya jelas.
+- rendah: Gambar memiliki beberapa elemen mencurigakan, tetapi mungkin sah.
+- aman: Gambar tidak menunjukkan ancaman yang terdeteksi.
+
+Harap sangat skeptis dan proaktif dalam mengidentifikasi potensi ancaman. Jika Anda tidak yakin, selalu beri nilai risiko yang lebih tinggi.
+Tulis jawaban dalam Bahasa Indonesia.`;
+
     // Format data yang benar untuk DeepSeek API
     const requestBody = {
-      model: "deepseek-chat", // Mengubah dari "deepseek-vision" ke "deepseek-chat" (model yang valid)
+      model: "deepseek-chat", // Model yang valid
       messages: [
         {
           role: "user",
           content: [
             {
               type: "text",
-              text: "Analyze this screenshot for security threats, phishing attempts, or other potential risks. Identify any suspicious elements, misleading interfaces, or signs of fraud. Respond in Indonesian language."
+              text: promptText
             },
             {
               type: "image_url",
@@ -324,56 +360,145 @@ const analyzeWithDeepSeek = async (imageData: string): Promise<AnalysisResult> =
     console.log("Response data:", JSON.stringify(data).substring(0, 300) + "...");
     
     // Parse the response from DeepSeek
-    // DeepSeek API mengembalikan respons dengan format serupa OpenAI API
     const aiContent = data.choices?.[0]?.message?.content || '';
     console.log("AI content:", aiContent.substring(0, 300) + "...");
     
-    // Tentukan risk level berdasarkan analisis AI
+    // Default values
     let riskLevel: 'safe' | 'low' | 'medium' | 'high' | 'unknown' = 'unknown';
     let confidenceScore = 0.5;
     let threats: Threat[] = [];
     let summary = '';
     let recommendations: string[] = [];
     
-    // Parse respons teks dari DeepSeek untuk ekstrak informasi yang diperlukan
-    if (aiContent.toLowerCase().includes('high risk') || aiContent.toLowerCase().includes('risiko tinggi')) {
+    // Sistem deteksi risiko yang lebih komprehensif
+    const lowerContent = aiContent.toLowerCase();
+    
+    // Deteksi tingkat risiko dari kata kunci yang lebih beragam
+    const highRiskKeywords = ['risiko tinggi', 'high risk', 'berbahaya', 'phishing', 'penipuan', 'malware', 'scam', 
+                            'virus', 'trojan', 'ransomware', 'pencurian data', 'berbahaya', 'jangan', 'data breach'];
+    
+    const mediumRiskKeywords = ['risiko sedang', 'medium risk', 'mencurigakan', 'suspicious', 'waspada', 
+                               'hati-hati', 'verifikasi', 'tidak aman', 'peringatan', 'warning'];
+    
+    const lowRiskKeywords = ['risiko rendah', 'low risk', 'potensi', 'potential', 'kemungkinan', 'mungkin'];
+    
+    // Cek kemunculan kata kunci risiko tinggi
+    const hasHighRisk = highRiskKeywords.some(keyword => lowerContent.includes(keyword));
+    
+    // Cek untuk kata 'RISIKO: tinggi' atau 'RISIKO:tinggi' eksplisit dalam API response
+    const explicitHighRisk = /risiko:?\s*tinggi/i.test(aiContent);
+    
+    // Cek kemunculan kata kunci risiko sedang
+    const hasMediumRisk = mediumRiskKeywords.some(keyword => lowerContent.includes(keyword));
+    
+    // Cek untuk kata 'RISIKO: sedang' atau 'RISIKO:sedang' eksplisit dalam API response  
+    const explicitMediumRisk = /risiko:?\s*sedang/i.test(aiContent);
+    
+    // Cek kemunculan kata kunci risiko rendah
+    const hasLowRisk = lowRiskKeywords.some(keyword => lowerContent.includes(keyword));
+    
+    // Cek untuk kata 'RISIKO: rendah' atau 'RISIKO:rendah' eksplisit dalam API response
+    const explicitLowRisk = /risiko:?\s*rendah/i.test(aiContent);
+    
+    // Cek untuk kata 'RISIKO: aman' atau 'RISIKO:aman' eksplisit dalam API response
+    const explicitSafe = /risiko:?\s*aman/i.test(aiContent);
+    
+    // Tentukan tingkat risiko berdasarkan kriteria di atas, dengan prioritas pada label eksplisit
+    if (explicitHighRisk || (!explicitMediumRisk && !explicitLowRisk && !explicitSafe && hasHighRisk)) {
       riskLevel = 'high';
       confidenceScore = 0.9;
-    } else if (aiContent.toLowerCase().includes('medium risk') || aiContent.toLowerCase().includes('risiko sedang')) {
+    } else if (explicitMediumRisk || (!explicitLowRisk && !explicitSafe && hasMediumRisk)) {
       riskLevel = 'medium';
-      confidenceScore = 0.7;
-    } else if (aiContent.toLowerCase().includes('low risk') || aiContent.toLowerCase().includes('risiko rendah')) {
+      confidenceScore = 0.75;
+    } else if (explicitLowRisk || (!explicitSafe && hasLowRisk)) {
+      riskLevel = 'low';
+      confidenceScore = 0.6;
+    } else if (explicitSafe || (!hasHighRisk && !hasMediumRisk && !hasLowRisk)) {
+      riskLevel = 'safe';
+      confidenceScore = 0.85; // Diturunkan dari 0.95 untuk mengurangi overconfidence
+    } else {
+      // Jika tidak jelas, default ke low risk sebagai tindakan kehati-hatian
       riskLevel = 'low';
       confidenceScore = 0.5;
-    } else {
-      riskLevel = 'safe';
-      confidenceScore = 0.95;
     }
     
-    // Ekstrak summary dari respons
-    summary = aiContent.split('\n')[0] || 'Analisis selesai.';
+    // Ekstrak summary dari respons dengan lebih agresif
+    const summaryMatch = aiContent.match(/summary:?\s*(.*?)(?:\n|$)/i) || 
+                         aiContent.match(/ringkasan:?\s*(.*?)(?:\n|$)/i);
+    summary = summaryMatch ? summaryMatch[1].trim() : aiContent.split('\n')[0] || 'Analisis selesai.';
     
-    // Ekstrak recommendations
-    const recLines = aiContent.match(/recommendations?:([^\n]*(?:\n(?!threats?:|summary:)[^\n]*)*)/i);
-    if (recLines && recLines[1]) {
-      recommendations = recLines[1].split('\n')
-        .map((line: string) => line.trim())
-        .filter((line: string) => line.length > 0 && !line.startsWith('-'));
+    // Ekstrak threats dengan regex yang lebih komprehensif
+    const threatsRegex = /threats:?\s*([\s\S]*?)(?=recommendations|summary|$)/i;
+    const threatMatches = aiContent.match(threatsRegex);
+    
+    if (threatMatches && threatMatches[1]) {
+      // Pisahkan berdasarkan baris baru atau tanda hubung/bullet
+      const threatLines = threatMatches[1].split(/\n|-|\*/).map((line: string) => line.trim()).filter(Boolean);
+      
+      threats = threatLines.map((threatText: string) => ({
+        type: 'security',
+        description: threatText,
+        confidence: confidenceScore
+      }));
     } else {
-      recommendations = ['Tidak ada rekomendasi spesifik.'];
-    }
-    
-    // Ekstrak threats
-    const threatLines = aiContent.match(/threats?:([^\n]*(?:\n(?!recommendations?:|summary:)[^\n]*)*)/i);
-    if (threatLines && threatLines[1]) {
-      threats = threatLines[1].split('\n')
-        .map((line: string) => line.trim())
-        .filter((line: string) => line.length > 0 && !line.startsWith('-'))
-        .map((description: string) => ({
+      // Jika tidak ada threats yang jelas disebutkan tapi risiko tidak aman,
+      // maka ekstrasi potongan kalimat yang mungkin menjelaskan ancaman
+      if (riskLevel !== 'safe') {
+        // Cari kalimat yang berisi kata kunci yang mencurigakan
+        const sentences = aiContent.split(/[.!?]+/).map((s: string) => s.trim()).filter(Boolean);
+        const suspiciousSentences = sentences.filter((sentence: string) => {
+          const lowerSentence = sentence.toLowerCase();
+          return highRiskKeywords.some(keyword => lowerSentence.includes(keyword)) || 
+                 mediumRiskKeywords.some(keyword => lowerSentence.includes(keyword));
+        });
+        
+        threats = suspiciousSentences.map((sentence: string) => ({
           type: 'security',
-          description,
-          confidence: confidenceScore
+          description: sentence,
+          confidence: confidenceScore * 0.9
         }));
+      }
+    }
+    
+    // Ekstrak recommendations dengan regex yang lebih komprehensif
+    const recommendationsRegex = /recommendations:?\s*([\s\S]*?)(?=threats|summary|$)/i;
+    const recMatches = aiContent.match(recommendationsRegex) || 
+                       aiContent.match(/rekomendasi:?\s*([\s\S]*?)(?=threats|summary|$)/i);
+    
+    if (recMatches && recMatches[1]) {
+      // Pisahkan berdasarkan baris baru atau tanda hubung/bullet
+      const recLines = recMatches[1].split(/\n|-|\*/).map((line: string) => line.trim()).filter(Boolean);
+      recommendations = recLines;
+    } else {
+      // Rekomendasi default berdasarkan tingkat risiko
+      switch (riskLevel) {
+        case 'high':
+          recommendations = [
+            'Segera tutup halaman/aplikasi ini',
+            'Jangan memasukkan informasi pribadi atau keuangan',
+            'Laporkan ke pihak berwenang atau tim IT',
+            'Periksa perangkat Anda dengan antivirus'
+          ];
+          break;
+        case 'medium':
+          recommendations = [
+            'Verifikasi sumber atau pengirim sebelum melanjutkan',
+            'Periksa URL dan sertifikat keamanan',
+            'Hindari memasukkan informasi pribadi',
+            'Gunakan fitur keamanan browser seperti pendeteksi phishing'
+          ];
+          break;
+        case 'low':
+          recommendations = [
+            'Berhati-hati dengan informasi yang Anda bagikan',
+            'Verifikasi sumber informasi',
+            'Pertimbangkan risiko sebelum melanjutkan'
+          ];
+          break;
+        default:
+          recommendations = ['Lanjutkan dengan tindakan pencegahan normal'];
+          break;
+      }
     }
     
     return {
@@ -382,7 +507,8 @@ const analyzeWithDeepSeek = async (imageData: string): Promise<AnalysisResult> =
       threats,
       summary,
       recommendations: recommendations.length ? recommendations : ['Tidak ada rekomendasi spesifik.'],
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      rawAnalysis: aiContent // Menyimpan respon mentah untuk debugging
     };
   } catch (error) {
     console.error('Error in DeepSeek analysis:', error);
