@@ -8,7 +8,10 @@ interface WorkerWithState extends Tesseract.Worker {
 
 // Enum PSM dari definisi tesseract.js
 enum PSM {
-  SINGLE_BLOCK = '6'
+  SINGLE_BLOCK = '6',
+  SINGLE_LINE = '7',
+  SINGLE_WORD = '8',
+  SINGLE_CHAR = '10'
 }
 
 let worker: WorkerWithState | null = null;
@@ -32,16 +35,13 @@ export async function initializeOCR() {
       console.log('Initializing OCR engine...');
       
       // Gunakan opsi yang lebih sederhana untuk meningkatkan kecepatan
-      const newWorker = await createWorker() as WorkerWithState;
-      
-      // Konfigurasi worker
+      // Tesseract.js v4 menggunakan createWorker dengan cara yang berbeda
+      // Menggunakan multiple languages (eng+ind)
+      const newWorker = await createWorker('eng+ind') as WorkerWithState;
       console.log('Configuring OCR worker...');
       
-      // Gabungkan bahasa untuk dukungan multi-bahasa
-      const languages = TESSERACT_CONFIG.languages.join('+');
-      console.log(`Loading OCR languages: ${languages}`);
-      await newWorker.loadLanguage(languages);
-      await newWorker.initialize(languages);
+      // Dalam Tesseract.js v4, kita tidak perlu memanggil loadLanguage dan initialize secara terpisah
+      // karena sudah ditangani oleh createWorker
       
       // Konfigurasi tambahan untuk meningkatkan akurasi OCR
       await newWorker.setParameters({
@@ -99,17 +99,9 @@ export async function recognizeText(imageData: string): Promise<string> {
       worker = null;
       initPromise = null;
       
-      ocrWorker = await createWorker() as WorkerWithState;
-      
-      // Konfigurasi sederhana
-      await ocrWorker.loadLanguage('eng');
-      await ocrWorker.initialize('eng');
-      
-      // Gunakan parameter minimal
-      await ocrWorker.setParameters({
-        tessedit_ocr_engine_mode: '1',
-        tessedit_pageseg_mode: PSM.SINGLE_BLOCK
-      });
+      // Gunakan opsi minimal untuk tesseract
+      ocrWorker = await createWorker('eng+ind') as WorkerWithState;
+      ocrWorker.isLoaded = true;
     }
     
     if (!ocrWorker) {
@@ -117,7 +109,27 @@ export async function recognizeText(imageData: string): Promise<string> {
     }
     
     console.log('Recognizing text from image...');
-    const result = await ocrWorker.recognize(imageData);
+    
+    // Mencoba dengan berbagai mode PSM jika gagal mendapatkan teks
+    let result = await ocrWorker.recognize(imageData);
+    
+    // Jika tidak mendapatkan teks yang berarti, coba dengan mode lain
+    if (!result.data.text || result.data.text.trim().length < 5) {
+      console.log('Retrying with different parameters...');
+      
+      // Ubah parameter untuk mode berbeda
+      await ocrWorker.setParameters({
+        tessedit_pageseg_mode: PSM.SINGLE_LINE
+      });
+      
+      result = await ocrWorker.recognize(imageData);
+      
+      // Kembalikan ke mode default
+      await ocrWorker.setParameters({
+        tessedit_pageseg_mode: PSM.SINGLE_BLOCK
+      });
+    }
+    
     console.log('OCR completed successfully');
     
     if (!result.data.text || result.data.text.trim().length === 0) {

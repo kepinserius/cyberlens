@@ -1,16 +1,27 @@
 'use client';
 
+import { useLanguage } from '../contexts/LanguageContext';
 import { HeartIcon } from '@heroicons/react/24/solid';
 
 export default function Footer() {
+  const { t } = useLanguage();
+  
   return (
-    <footer className="bg-slate-800 border-t border-slate-700 py-4 px-6 text-center">
+    <footer className="bg-slate-800 border-t border-slate-700 py-4 px-6">
       <div className="container mx-auto">
-        <p className="text-slate-400 text-sm flex items-center justify-center">
-          <span>CyberLens &copy; {new Date().getFullYear()} - Dibuat dengan</span>
-          <HeartIcon className="h-4 w-4 text-red-500 mx-1" />
-          <span>oleh Tim Keamanan Siber</span>
-        </p>
+        <div className="flex flex-col md:flex-row justify-between items-center">
+          <p className="text-slate-400 text-sm mb-2 md:mb-0">
+            © {new Date().getFullYear()} CyberLens - All rights reserved
+          </p>
+          <div className="flex space-x-4">
+            <a href="#" className="text-slate-400 hover:text-white text-sm">
+              Privacy Policy
+            </a>
+            <a href="#" className="text-slate-400 hover:text-white text-sm">
+              Terms of Service
+            </a>
+          </div>
+        </div>
         <p className="text-slate-500 text-xs mt-1">
           Aplikasi ini menggunakan teknologi OCR dan AI untuk mendeteksi ancaman keamanan
         </p>

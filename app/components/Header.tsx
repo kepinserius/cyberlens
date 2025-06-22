@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { EyeIcon, CameraIcon } from '@heroicons/react/24/outline';
 import Image from 'next/image';
+import { useLanguage } from '../contexts/LanguageContext';
+import LanguageSwitcher from './LanguageSwitcher';
 
 interface HeaderProps {
   onToggleHistory: () => void;
@@ -12,6 +14,7 @@ interface HeaderProps {
 export default function Header({ onToggleHistory, onStartScanning }: HeaderProps) {
   const [mounted, setMounted] = useState(false);
   const [showHistory, setShowHistory] = useState(true);
+  const { t } = useLanguage();
   
   // Untuk memastikan rendering hanya terjadi di client-side
   useEffect(() => {
@@ -37,18 +40,20 @@ export default function Header({ onToggleHistory, onStartScanning }: HeaderProps
             priority
           />
           <div>
-            <h1 className="text-2xl font-bold text-white">CyberLens</h1>
-            <p className="text-sm text-slate-400">Advanced Threat Detection</p>
+            <h1 className="text-2xl font-bold text-white">{t('appTitle')}</h1>
+            <p className="text-sm text-slate-400">{t('appSubtitle')}</p>
           </div>
         </div>
         
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-2">
+            <LanguageSwitcher />
+            
             <button
               onClick={toggleHistory}
               className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-md flex items-center space-x-2"
             >
-              <span>{showHistory ? 'Sembunyikan Riwayat' : 'Tampilkan Riwayat'}</span>
+              <span>{showHistory ? t('hideHistory') : t('showHistory')}</span>
             </button>
             
             <button
@@ -56,7 +61,7 @@ export default function Header({ onToggleHistory, onStartScanning }: HeaderProps
               className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-md flex items-center space-x-2 scan-button"
             >
               <CameraIcon className="h-5 w-5" />
-              <span>Scan Sekarang</span>
+              <span>{t('scanNow')}</span>
             </button>
           </div>
         </div>

@@ -10,6 +10,7 @@ import { analyzeText } from './services/threatAnalysisService';
 import { preprocessImageForOCR } from './utils/imageProcessing';
 import { AnalysisResult } from './components/ThreatAnalysis';
 import { APP_CONFIG } from './config';
+import { useLanguage } from './contexts/LanguageContext';
 
 // Import komponen dengan dynamic import untuk menghindari masalah SSR
 const CameraPreview = dynamic(() => import('./components/CameraPreview'), {
@@ -38,6 +39,7 @@ const HistoryPanel = dynamic(() => import('./components/HistoryPanel'), {
 });
 
 export default function Home() {
+  const { t } = useLanguage();
   const [isScanning, setIsScanning] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
@@ -136,7 +138,7 @@ export default function Home() {
         if (ocrError) {
           throw ocrError;
         } else {
-          throw new Error('Tidak ada teks yang terdeteksi dalam gambar setelah beberapa kali percobaan. Coba ambil gambar yang lebih jelas.');
+          throw new Error(t('ocrError'));
         }
       }
       
@@ -151,11 +153,11 @@ export default function Home() {
       // Add to history
       setHistory(prev => [result, ...prev]);
       
-      showNotification('success', 'Analisis teks berhasil dilakukan');
+      showNotification('success', t('analysisFailed'));
       
     } catch (error) {
       console.error('Error processing image:', error);
-      showNotification('error', error instanceof Error ? error.message : 'Terjadi kesalahan saat memproses gambar');
+      showNotification('error', error instanceof Error ? error.message : t('analysisFailed'));
     } finally {
       setIsScanning(false);
       setIsAnalyzing(false);
@@ -166,7 +168,7 @@ export default function Home() {
     if (cameraRef.current) {
       cameraRef.current.captureImage();
     } else {
-      showNotification('error', 'Kamera belum siap. Mohon tunggu sebentar atau refresh halaman.');
+      showNotification('error', t('cameraAccessError'));
     }
   };
 
@@ -177,7 +179,7 @@ export default function Home() {
   const handleClearHistory = () => {
     setHistory([]);
     localStorage.removeItem('cyberlens_history');
-    showNotification('success', 'Riwayat berhasil dihapus');
+    showNotification('success', t('deleteAll'));
   };
 
   const handleToggleHistory = () => {

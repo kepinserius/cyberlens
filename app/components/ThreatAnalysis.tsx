@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { CheckCircleIcon, ExclamationCircleIcon, ShieldCheckIcon } from '@heroicons/react/24/outline';
+import { useLanguage } from '../contexts/LanguageContext';
 
 export type ThreatLevel = 'safe' | 'medium' | 'high';
 
@@ -22,6 +23,7 @@ interface ThreatAnalysisProps {
 
 export default function ThreatAnalysis({ analysisResult, isAnalyzing }: ThreatAnalysisProps) {
   const [animation, setAnimation] = useState(false);
+  const { t, language } = useLanguage();
   
   useEffect(() => {
     if (analysisResult) {
@@ -37,12 +39,12 @@ export default function ThreatAnalysis({ analysisResult, isAnalyzing }: ThreatAn
         <div className="p-4 bg-slate-800 border-b border-slate-700 flex items-center">
           <div className="flex items-center space-x-2">
             <ShieldCheckIcon className="h-6 w-6 text-blue-400" />
-            <h2 className="text-xl font-semibold text-white">Threat Analysis</h2>
+            <h2 className="text-xl font-semibold text-white">{t('threatAnalysis')}</h2>
           </div>
         </div>
         <div className="p-6 flex flex-col items-center justify-center h-[calc(100%-4rem)]">
           <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-          <p className="text-slate-300 text-lg">Menganalisis teks...</p>
+          <p className="text-slate-300 text-lg">{t('analyzingText')}</p>
         </div>
       </div>
     );
@@ -54,17 +56,41 @@ export default function ThreatAnalysis({ analysisResult, isAnalyzing }: ThreatAn
         <div className="p-4 bg-slate-800 border-b border-slate-700 flex items-center">
           <div className="flex items-center space-x-2">
             <ShieldCheckIcon className="h-6 w-6 text-blue-400" />
-            <h2 className="text-xl font-semibold text-white">Threat Analysis</h2>
+            <h2 className="text-xl font-semibold text-white">{t('threatAnalysis')}</h2>
           </div>
         </div>
         <div className="p-6 flex flex-col items-center justify-center h-[calc(100%-4rem)]">
-          <p className="text-slate-400 text-lg">Ambil gambar untuk melakukan analisis ancaman</p>
+          <p className="text-slate-400 text-lg">{t('captureToAnalyze')}</p>
         </div>
       </div>
     );
   }
 
-  const { threatLevel, confidence, recommendations, text, threatType, analysis } = analysisResult;
+  // Pastikan recommendations adalah array
+  const safeRecommendations = Array.isArray(analysisResult.recommendations) 
+    ? analysisResult.recommendations 
+    : typeof analysisResult.recommendations === 'string'
+      ? [analysisResult.recommendations]
+      : ['Tetap berhati-hati dengan konten online', 'Selalu verifikasi pengirim atau sumber informasi'];
+
+  // Pastikan analisis bukan JSON string
+  let analysisText = analysisResult.analysis || '';
+  if (analysisText && typeof analysisText === 'string') {
+    try {
+      // Periksa apakah string adalah JSON
+      if (analysisText.trim().startsWith('{') && analysisText.trim().endsWith('}')) {
+        const parsed = JSON.parse(analysisText);
+        if (typeof parsed === 'object' && parsed !== null) {
+          analysisText = parsed.analysis || parsed.description || analysisText;
+        }
+      }
+    } catch (e) {
+      // Bukan JSON valid, gunakan string aslinya
+    }
+  }
+
+  // Dapatkan properti yang telah divalidasi
+  const { threatLevel, confidence, text, threatType } = analysisResult;
 
   const getThreatColor = (level: ThreatLevel) => {
     switch (level) {
@@ -99,10 +125,10 @@ export default function ThreatAnalysis({ analysisResult, isAnalyzing }: ThreatAn
 
   const getThreatLabel = (level: ThreatLevel) => {
     switch (level) {
-      case 'safe': return 'Safe';
-      case 'medium': return 'Warning';
-      case 'high': return 'Danger';
-      default: return 'Safe';
+      case 'safe': return t('safe');
+      case 'medium': return t('warning');
+      case 'high': return t('danger');
+      default: return t('safe');
     }
   };
 
@@ -111,7 +137,7 @@ export default function ThreatAnalysis({ analysisResult, isAnalyzing }: ThreatAn
       <div className="p-4 bg-slate-800 border-b border-slate-700 flex items-center">
         <div className="flex items-center space-x-2">
           <ShieldCheckIcon className="h-6 w-6 text-blue-400" />
-          <h2 className="text-xl font-semibold text-white">Threat Analysis</h2>
+          <h2 className="text-xl font-semibold text-white">{t('threatAnalysis')}</h2>
         </div>
       </div>
       
@@ -124,18 +150,18 @@ export default function ThreatAnalysis({ analysisResult, isAnalyzing }: ThreatAn
                 {getThreatLabel(threatLevel)}
               </h3>
               <p className="text-slate-300 text-sm">
-                Threat Assessment Complete
+                {t('threatAssessmentComplete')}
               </p>
             </div>
           </div>
           <div className="bg-slate-800 rounded-full px-3 py-1 text-sm font-medium">
-            {confidence}% confidence
+            {confidence}% {t('confidence')}
           </div>
         </div>
         
         <div className="space-y-1">
           <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider">
-            Confidence Score
+            {t('confidenceScore')}
           </h3>
           <div className="w-full h-2 bg-slate-700 rounded-full overflow-hidden">
             <div 
@@ -153,32 +179,32 @@ export default function ThreatAnalysis({ analysisResult, isAnalyzing }: ThreatAn
         <div className="space-y-4">
           <div>
             <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider mb-2">
-              Analysis Summary
+              {t('analysisSummary')}
             </h3>
             <p className="text-slate-300">
-              {analysis || (threatLevel === 'safe' 
-                ? 'Tidak terdeteksi risiko keamanan pada teks yang diekstrak.' 
-                : `Terdeteksi potensi ${threatType || 'ancaman'} pada teks yang diekstrak.`)}
+              {analysisText || (threatLevel === 'safe' 
+                ? t('noThreatDetected')
+                : t('threatDetected').replace('{threat}', threatType || t('threatType')))}
             </p>
           </div>
           
           <div>
             <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider mb-2">
-              Extracted Text
+              {t('extractedText')}
             </h3>
             <div className="bg-slate-900 rounded-lg p-3 max-h-32 overflow-y-auto">
               <p className="text-slate-300 whitespace-pre-wrap break-words">
-                {text || 'Tidak ada teks yang terdeteksi'}
+                {text || t('noTextDetected')}
               </p>
             </div>
           </div>
           
           <div>
             <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider mb-2">
-              Recommendations
+              {t('recommendations')}
             </h3>
             <ul className="space-y-2">
-              {recommendations.map((rec, index) => (
+              {safeRecommendations.map((rec, index) => (
                 <li key={index} className="flex items-start space-x-2">
                   <CheckCircleIcon className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
                   <span className="text-slate-300">{rec}</span>
@@ -190,7 +216,7 @@ export default function ThreatAnalysis({ analysisResult, isAnalyzing }: ThreatAn
           {threatType && (
             <div>
               <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider mb-2">
-                Threat Type
+                {t('threatType')}
               </h3>
               <div className={`inline-block px-3 py-1 rounded-full text-sm ${getThreatColor(threatLevel)}`}>
                 {threatType}
